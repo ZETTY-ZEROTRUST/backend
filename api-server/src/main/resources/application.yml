@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: api-server
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  port: 8080
+
+aws:
+  region: ap-northeast-2
+  kms:
+    # KMS 키 페어의 alias. API Server는 이 키의 공개키만 fetch해서 JWT 검증에 사용.
+    jwt-key-alias: alias/jwt-signing-key
