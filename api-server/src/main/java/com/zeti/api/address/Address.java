@@ -48,4 +48,23 @@ public class Address {
 
     @Column(name = "is_default")
     private Boolean isDefault;
+
+    public void updateAddress(
+            String recipientName,
+            String recipientPhone,
+            String postalCode,
+            String addressLine1,
+            String addressLine2,
+            String doorPassword,
+            String deliveryNote,
+            Boolean isDefault) {
+        this.recipientName = recipientName;
+        this.recipientPhone = recipientPhone;
+        this.postalCode = postalCode;
+        this.addressLine1 = addressLine1;
+        this.addressLine2 = addressLine2;
+        this.doorPassword = doorPassword;
+        this.deliveryNote = deliveryNote;
+        this.isDefault = isDefault;
+    }
 }
