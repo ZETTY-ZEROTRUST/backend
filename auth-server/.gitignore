@@ -1,0 +1,85 @@
+# =====================================================
+# ZETTY backend monorepo .gitignore
+# =====================================================
+
+# ---------- Java / Gradle ----------
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.log
+hs_err_pid*
+replay_pid*
+
+.gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# ---------- Spring Boot ----------
+HELP.md
+
+# ---------- Local config (시크릿 노출 방지) ----------
+application-local.yml
+application-local.yaml
+application-local.properties
+application-secret.yml
+application-secret.yaml
+application-secret.properties
+.env
+.env.local
+.env.*.local
+
+# ---------- AWS ----------
+.aws-sam/
+*.pem
+credentials.json
+
+# ---------- IDE / Editor ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+.factorypath
+.apt_generated/
+.springBeans
+.sts4-cache/
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Logs ----------
+logs/
+*.log
+
+# ---------- Docker ----------
+.docker/
+docker-compose.override.yml
+
+# ---------- Temp / Build artifacts ----------
+*.tmp
+*.bak
+*.backup
+out/
+target/
+
+# ---------- Claude Code 작업 캐시 ----------
+.claude/cache/
+.claude/.local/
+
+# ---------- 로컬 전용 (팀 공유 X) ----------
+/CLAUDE.md
+/.claude/
+/.gitmessage
+/docs/
