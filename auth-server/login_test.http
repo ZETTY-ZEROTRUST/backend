@@ -1,0 +1,8 @@
+### 로그인 요청 테스트
+POST http://localhost:8080/auth/login
+Content-Type: application/json
+
+{
+  "email": "dgtest@ajou.ac.kr",
+  "password": "password123!"
+}

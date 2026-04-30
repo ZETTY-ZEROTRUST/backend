@@ -1,0 +1,12 @@
+### 회원가입 요청 테스트
+POST http://localhost:8080/auth/signup
+Content-Type: application/json
+
+{
+  "loginId": "zeti_test",
+  "password": "password123!",
+  "name": "gildong",
+  "phone": "010-1234-5678",
+  "email": "dgtest@ajou.ac.kr",
+  "address": "Seoul"
+}
