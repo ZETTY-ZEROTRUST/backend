@@ -83,3 +83,4 @@ target/
 /.claude/
 /.gitmessage
 /docs/PROGRESS.md
+/scripts/.token
