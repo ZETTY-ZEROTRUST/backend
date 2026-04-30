@@ -1,0 +1,17 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: zeti-api-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: zeti_db
+      MYSQL_USER: zeti
+      MYSQL_PASSWORD: zeti
+    ports:
+      - "3306:3306"
+    volumes:
+      - zeti-db-data:/var/lib/mysql
+
+volumes:
+  zeti-db-data:
