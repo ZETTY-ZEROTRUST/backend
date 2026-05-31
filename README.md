@@ -474,6 +474,7 @@ cd /opt/zeti-backend/auth-server && SPRING_PROFILES_ACTIVE=prod ./gradlew bootRu
 | [`log-pipeline`](https://github.com/ZETTY-ZEROTRUST/log-pipeline) | Nginx PEP 가 backend 로그를 Filebeat → ES 로 수집, `jwt-decode` ingest 가 11 클레임 분해 |
 | [`uba-analyzer`](https://github.com/ZETTY-ZEROTRUST/uba-analyzer) | `filebeat-*` 색인을 읽어 7 factor 채점 + LLM 추론으로 IDOR 등 탐지 |
 | [`attack-simulation`](https://github.com/ZETTY-ZEROTRUST/attack-simulation) | 본 backend 의 의도된 4 취약점을 공격하는 S2 ~ S8 시나리오 발사 |
+| [`zero-trust-architecture`](https://github.com/ZETTY-ZEROTRUST/zero-trust-architecture) | AWS 인프라 IaC (Terraform 9 모듈) — VPC / SG 체인 / ALB + WAF / Route53 / KMS — backend 가 올라가는 priv-app tier 정의 |
 | [`.github`](https://github.com/ZETTY-ZEROTRUST/.github) | Org Overview README |
 
 ---
