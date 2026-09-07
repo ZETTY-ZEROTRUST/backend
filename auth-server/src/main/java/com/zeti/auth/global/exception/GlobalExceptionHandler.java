@@ -1,6 +1,4 @@
-// 추가 필요
-// src/main/java/com/zeti/auth/global/GlobalExceptionHandler.java
-package com.zeti.auth.global;
+package com.zeti.auth.global.exception;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;

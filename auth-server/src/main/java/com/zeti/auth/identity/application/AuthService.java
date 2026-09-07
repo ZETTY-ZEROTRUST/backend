@@ -1,12 +1,11 @@
-// src/main/java/com/zeti/auth/domain/user/service/AuthService.java
-package com.zeti.auth.domain.user.service;
+package com.zeti.auth.identity.application;
 
-import com.zeti.auth.domain.user.dto.LoginRequest;
-import com.zeti.auth.domain.user.dto.SignupRequest;
-import com.zeti.auth.domain.user.dto.TokenResponse;
-import com.zeti.auth.domain.user.entity.User;
-import com.zeti.auth.domain.user.repository.UserRepository;
-import com.zeti.auth.jwt.JwtIssuer;
+import com.zeti.auth.identity.application.dto.LoginRequest;
+import com.zeti.auth.identity.application.dto.SignupRequest;
+import com.zeti.auth.identity.application.dto.TokenResponse;
+import com.zeti.auth.identity.domain.User;
+import com.zeti.auth.identity.infrastructure.persistence.UserRepository;
+import com.zeti.auth.token.application.JwtIssuer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
