@@ -12,7 +12,7 @@ export TEST_PASSWORD="${TEST_PASSWORD:-test1234}"
 export TEST_NAME="${TEST_NAME:-테스트}"
 export TEST_PHONE="${TEST_PHONE:-010-0000-0000}"
 
-# IDOR 시연 대상 — data.sql 500명 중 하나
+# 위조 토큰 시연 대상 — data.sql 500명 중 하나
 # 9자리 정수, 쿠팡 user_id 패턴 모방 (140000000~)
 export VICTIM_USER_ID="${VICTIM_USER_ID:-140000010}"
 
