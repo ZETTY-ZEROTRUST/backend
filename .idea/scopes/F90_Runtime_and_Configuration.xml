@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="F90 · Runtime &amp; Configuration" pattern="file:auth-server/src/main/java/com/zeti/auth/health//*||file:api-server/src/main/java/com/zeti/api/health//*||file:auth-server/src/main/resources//*||file:api-server/src/main/resources//*||file:auth-server/build.gradle.kts||file:auth-server/settings.gradle.kts||file:auth-server/docker-compose.yml||file:api-server/build.gradle||file:api-server/settings.gradle||file:api-server/compose.yaml" />
+</component>

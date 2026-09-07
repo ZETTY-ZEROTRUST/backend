@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="FileColors">
+    <fileColor scope="R10 · Auth Server" color="Blue" />
+    <fileColor scope="R20 · API Server" color="Green" />
+    <fileColor scope="R30 · Demo Scripts" color="Orange" />
+    <fileColor scope="R40 · Architecture Docs" color="Gray" />
+  </component>
+</project>
