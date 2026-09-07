@@ -6,7 +6,7 @@
 #   - 유출된 KMS external import 개인키(.pem)로 임의 sub의 토큰을 로컬에서 서명
 #   - 본인 계정/로그인 없이 victim의 sub만 박아 토큰 위조 → api-server는
 #     KMS 공개키로 검증 통과 → /users/me 같은 정상 endpoint에서 victim 데이터 반환
-#   - 04/05의 IDOR과는 다른 결: path 조작이 아니라 토큰 자체를 위조
+#   - 사용자 ID가 포함된 별도 자원 경로 없이 토큰 자체의 sub를 위조
 #   - 인가가 완벽해도 뚫림 — 키 유출 단일 사고로 발생
 #
 # 사전 조건:
@@ -48,5 +48,5 @@ curl -sS "$API_URL/addresses" -H "Authorization: Bearer $FORGED" | jq .
 echo
 
 echo "★ 응답에 victim($VICTIM_USER_ID)의 데이터가 반환되면 위조 성공"
-echo "  → 로그인/IDOR path 조작 없이도 타인 데이터 접근 가능"
+echo "  → 로그인 없이 위조 token의 sub만으로 해당 사용자 데이터 접근 가능"
 echo "  → 인가 검증이 완벽해도 뚫림 — 키 유출 단일 원인으로 발생"
