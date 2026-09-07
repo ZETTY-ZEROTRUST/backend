@@ -12,23 +12,28 @@
 
 ## ⚡ 30초 요약
 
-본 레포는 **인증 (auth-server) + 자원 (api-server)** 두 개의 Spring Boot 서비스로 구성된 ZETI 백엔드 본체입니다. 쿠팡 사고 재현을 위해 **JWT 서명키를 AWS KMS (ES256, ECC_NIST_P256 비대칭)** 로 분리하고, 동시에 **IDOR · door_password 평문 노출 · MOCK OTP** 등 4종의 의도된 취약점을 시연 자산으로 유지합니다.
+본 레포는 **인증 (auth-server) + 자원 (api-server)** 두 개의 Spring Boot 서비스로 구성된 ZETI 백엔드 본체입니다. 쿠팡 사고 재현을 위해 **JWT 서명키를 AWS KMS (ES256, ECC_NIST_P256 비대칭)** 로 분리하고, 모든 자원 API는 검증된 JWT `sub`의 소유 범위에서 동작합니다.
 
 - 🔑 **AWS KMS ES256 서명**: auth-server 는 `kms:Sign` 만, api-server 는 `kms:GetPublicKey` 만 — 키 분리 원칙
 - 🪪 **JWT 11 클레임 풀 페이로드**: `sub / jti / ext.LSID / acr / amr / fiat …` — 쿠팡 실 페이로드 리버스 그대로
-- 🚨 **의도된 4 취약점**: IDOR (`/addresses/{userId}` · `/orders/{userId}` · `/users/{userId}`) + MOCK OTP `"123456"` — UBA 탐지 검증용
+- 🧪 **JWT 위협 실험 자산**: 순차 `sub`, MOCK OTP `"123456"`, 문서화된 키 유출 재현 자산과 민감 응답 fixture
 - 🏗️ **AWS Multi-AZ**: 단일 VPC · priv-app 2a/2b · RDS MySQL Multi-AZ · ALB → Nginx PEP → App
-- 🧪 **시연 스크립트 자동화**: `scripts/all.sh` 1줄로 signup → login → 정상 → IDOR → 위조토큰 전체 흐름 검증
+- 🧪 **시연 스크립트 자동화**: `scripts/all.sh` 1줄로 signup → login → 자기 자원 조회 → 부정 토큰 → 위조 토큰 흐름 검증
 
-> ⚠️ **본 레포에는 의도된 보안 취약점이 존재합니다.** Codex/리뷰어가 이를 지적해도 "쿠팡 사고 재현용 시연 자산"이라 무시합니다. 임의로 "보안 강화" 패치를 적용하지 마세요.
+> ⚠️ 순차 `sub`, MOCK OTP, `door_password` 응답과 문서화된 키 유출 재현 자산은 실험 계약입니다. 자원 API의 소유권 검사는 항상 유지합니다.
+
+> 전체 여섯 저장소의 아키텍처는 [`docs/C4-as-is.md`](docs/C4-as-is.md)와
+> [`docs/c4-to-be.md`](docs/c4-to-be.md)에서 Context → Container → Component → Deployment 순서로 설명합니다.
+> 웹 인증 재설계 제안은 [`docs/auth-token-architecture.md`](docs/auth-token-architecture.md)를 참고하세요.
+> BFF의 토큰 저장·세션·갱신·폐기와 UBA 입력 변경을 다루며, 아직 구현·배포된 구조는 아닙니다.
 
 ---
 
-## 🎬 Live Demo — 시연 흐름 (8 step)
+## 🎬 Live Demo — 시연 흐름
 
 ```bash
 cd backend/scripts
-./all.sh        # 01_signup → 02_login → 03_self → 04_idor → 05_idor_modify → 06_negative → 07_forged_token
+./all.sh        # 01_signup → 02_login → 03_self → 06_negative → 07_forged_token
 ```
 
 | Step | 스크립트 | 시연 메시지 | 기대 결과 |
@@ -36,12 +41,10 @@ cd backend/scripts
 | 1 | `01_signup.sh` | 신규 사용자 가입 | 200 OK (이미 가입은 PASS, 멱등) |
 | 2 | `02_login.sh` | ES256 JWT 발급 | 토큰 추출, `scripts/.token` 저장 |
 | 3 | `03_self.sh` | 본인 데이터 조회 (정상 경로) | 200 OK, 자기 데이터만 |
-| 4 | **`04_idor.sh`** | **IDOR — 타인 `/addresses/{userId}` 조회** | 🚨 **200 OK + door_password 평문 노출** |
-| 5 | `05_idor_modify.sh` | IDOR — 타인 배송지 수정 | 🚨 200 OK |
-| 6 | `06_negative.sh` | 토큰 없는/만료 호출 | 401 (정상 거부) |
-| 7 | `07_forged_token.sh` | **하드코딩 키 위조 토큰** (KMS 전환 전 잔재) | 🚨 검증 통과 |
+| 4 | `06_negative.sh` | 토큰 없는/잘못된 호출 | 401 (정상 거부) |
+| 5 | `07_forged_token.sh` | **유출된 실험 키로 victim `sub` 토큰 위조** | 자기 자원 API에서 victim 데이터 반환 |
 
-→ 4 ~ 7 단계의 비정상 트래픽이 **`log-pipeline` 으로 흘러 들어가 `uba-analyzer` 가 탐지**합니다. 이 시연 흐름이 **ZETI 전체 시스템의 input event** 입니다.
+→ 4 ~ 5 단계의 비정상 트래픽이 **`log-pipeline` 으로 흘러 들어가 `uba-analyzer` 가 탐지**합니다. 이 시연 흐름이 **ZETI 전체 시스템의 input event** 입니다.
 
 ---
 
@@ -144,7 +147,7 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph API["api-server (priv-app, :8081)"]
-        AC[AddressController<br/>GET /addresses/{userId}]
+        AC[AddressController<br/>GET /addresses]
         SF[SecurityFilterChain]
         JAF[JwtAuthenticationFilter<br/>★ 검증 진입점]
         JV[JwtVerifier<br/>Nimbus JOSE]
@@ -173,7 +176,7 @@ sequenceDiagram
     participant SC as SecurityContext
     participant CTRL as AddressController
 
-    U->>NGX: GET /api/addresses/140000999<br/>Authorization: Bearer eyJ...
+    U->>NGX: GET /api/addresses<br/>Authorization: Bearer eyJ...
     NGX->>SF: forward (XFF 누적)
     SF->>JAF: ① doFilterInternal()
     JAF->>JAF: ② Authorization 헤더 파싱<br/>"Bearer " prefix 검증
@@ -192,21 +195,19 @@ sequenceDiagram
 
     JV->>JV: ⑤ Nimbus SignedJWT.parse()<br/>ECDSAVerifier(publicKey) ES256
     JV->>JV: ⑥ exp / nbf / iss / aud 검증
-    Note right of JV: ❌ path "userId" vs claim "sub"<br/>일치 검증은 안 함 (의도된 V3)
-
     JV-->>JAF: ⑦ JwtPrincipal(sub=140000511)
     JAF->>SC: ⑧ SecurityContextHolder.set(auth)
     JAF->>SF: chain.doFilter()
-    SF->>CTRL: ⑨ @AuthenticationPrincipal Long userId=140000511<br/>+ @PathVariable Long userId=140000999
-    Note right of CTRL: 🚨 V3 IDOR — userId 두 개가<br/>다른데도 비교 없이 통과
-    CTRL-->>U: ⑩ 200 OK + door_password 평문 (V3 부속)
+    SF->>CTRL: ⑨ @AuthenticationPrincipal Long userId=140000511
+    CTRL->>CTRL: JWT sub로 소유 자원 범위 결정
+    CTRL-->>U: ⑩ 200 OK + 본인 주소 응답
 
-    Note over NGX: log 행에 sub=140000511 / path=/api/addresses/140000999<br/>→ UBA F-DiversityIPSub factor 가 잡음
+    Note over NGX: log 행에 sub=140000511 / path=/api/addresses<br/>→ UBA가 token·network·행위 신호를 집계
 ```
 
 > **5 분 캐시의 이유**: `kms:GetPublicKey` 는 무료지만 매 요청 호출 시 latency (KMS 콜 ~30ms) 가 추가됩니다. 공개키는 **회전되지 않는 한 불변** 이므로 TTL 캐시가 안전. 회전 시점에는 캐시 invalidate 가 필요하지만 현 PoC 범위 외.
 
-> **검증 검증** (의도): `@AuthenticationPrincipal Long userId=140000511` vs `@PathVariable Long userId=140000999` 가 **컨트롤러 안에서 비교되지 않는다**는 게 V3 IDOR 의 본질. AOP 나 Spring Security `@PreAuthorize("#userId == principal")` 를 추가하지 마세요.
+> **자원 인가 계약**: collection과 프로필 API는 JWT `sub`에서 사용자 범위를 얻습니다. 주소 수정과 주문 상세 조회처럼 객체 ID가 필요한 API는 repository query에서 객체 ID와 소유자 ID를 함께 검증합니다.
 
 ---
 
@@ -286,16 +287,15 @@ return Base64.getUrlEncoder().withoutPadding().encodeToString(jwtSig);
 
 ---
 
-## 🚨 7. 의도된 취약점 4 종 (절대 "수정" 금지)
+## 🚨 7. 보존하는 실험 자산
 
 | ID | 위치 | 취약점 | UBA 검증 신호 |
 |----|------|--------|--------------|
 | **V1** | 전 코드 (잔재) | **하드코딩 JWT 서명키** (KMS 전환 전) | 단일 위조 토큰의 비정상 페이로드 검출 |
 | **V2** | `User.id : Long` | **순차 정수 PK** (`sub = 140000xxx`) | 글로벌 sub 단조 시퀀스 → enumeration factor |
-| **V3** | `GET /addresses/{userId}` 등 | **JWT `sub` vs path `userId` 일치 검증 누락** = IDOR | `F-DiversityIPSub`: 단일 IP × 다수 sub 조회 |
 | **V4** | `POST /auth/stepup` | **MOCK OTP `"123456"`** | step-up 우회 시도 패턴 |
 
-> `door_password` 평문 응답은 V3 의 부속 — **쿠팡 유출 데이터에서 가장 민감한 카테고리** 재현이라 일부러 평문 노출합니다.
+> `door_password` 평문 응답은 **키 유출 후 데이터 접근의 영향**을 관측하는 fixture입니다. 접근 대상은 항상 검증된 token `sub`의 소유 범위로 제한합니다.
 
 ### TO-BE (장기 계획, 본 PoC 범위 외)
 
@@ -303,42 +303,56 @@ return Base64.getUrlEncoder().withoutPadding().encodeToString(jwtSig);
 |------|-------|
 | V1 (하드코딩 키) | ✅ **AWS KMS 로 전환 완료** (auth-server `KmsJwtSigner`) |
 | V2 (순차 PK) | UUID 랜덤 (점진 migration) |
-| V3 (IDOR) | UBA **탐지** (차단 아님 — 본 PoC 범위는 "탐지 + 알림") |
 | V4 (MOCK OTP) | 실 TOTP / Twilio SMS |
 
 ---
 
 ## 📦 8. 디렉토리 구조
 
+두 서비스 모두 **도메인을 먼저 찾고**, 그 안에서 계층을 따라가도록 구성합니다.
+각 bounded context의 `package-info.java`에는 그 패키지가 소유하는 책임과 실험 계약을 짧게 기록합니다.
+
 ```
 backend/
 ├── auth-server/                          # 🔐 JWT 발급 + KMS Sign
 │   ├── src/main/java/com/zeti/auth/
 │   │   ├── AuthServerApplication.java
-│   │   ├── config/                       # SecurityConfig, KMS Bean
-│   │   ├── domain/user/                  # 회원 도메인 (controller/service/repository/entity)
-│   │   ├── jwt/
-│   │   │   ├── JwtIssuer.java            # 클레임 빌더 + 직렬화
-│   │   │   ├── JwtSigner.java            # 추상 인터페이스
-│   │   │   └── KmsJwtSigner.java         # ★ KMS ES256 구현
-│   │   └── global/                       # 공통 응답·예외·필터
+│   │   ├── identity/                     # 회원가입·로그인 bounded context
+│   │   │   ├── presentation/             # AuthController
+│   │   │   ├── application/              # AuthService + 요청/응답 DTO
+│   │   │   ├── domain/                   # User
+│   │   │   └── infrastructure/persistence/ # UserRepository
+│   │   ├── token/                        # JWT 발급·KMS 서명 bounded context
+│   │   │   ├── application/              # JwtIssuer
+│   │   │   │   └── port/outbound/        # JwtSigner 포트
+│   │   │   └── infrastructure/kms/       # KmsJwtSigner
+│   │   ├── health/presentation/          # HelloController
+│   │   └── global/
+│   │       ├── config/                   # SecurityConfig, JwtConfig
+│   │       └── exception/                # GlobalExceptionHandler
 │   ├── docker-compose.yml                # 로컬 MySQL
 │   └── build.gradle.kts
 │
-├── api-server/                           # 🪪 JWT 검증 + 도메인 API (IDOR 의도)
+├── api-server/                           # 🪪 JWT 검증 + 자기 자원 범위 도메인 API
 │   ├── src/main/java/com/zeti/api/
 │   │   ├── ApiServerApplication.java
-│   │   ├── config/                       # SecurityConfig (JWT filter chain)
-│   │   ├── jwt/
-│   │   │   ├── KmsPublicKeyProvider.java # ★ kms:GetPublicKey + 5분 캐시
-│   │   │   ├── JwtVerifier.java          # Nimbus JOSE ES256 verify
-│   │   │   └── JwtAuthenticationFilter.java
-│   │   ├── address/                      # 🚨 V3 IDOR
-│   │   ├── order/                        # 🚨 V3 IDOR
-│   │   ├── user/                         # /users/{id} 도 V3 동일 패턴
-│   │   ├── mypage/
-│   │   ├── payment/
-│   │   └── health/
+│   │   ├── address/                      # 배송지·소유권 검증
+│   │   ├── user/                         # 사용자 프로필 자기 자원 API
+│   │   ├── order/                        # 주문 조회·소유권 검증
+│   │   ├── payment/                      # 결제수단·결제내역
+│   │   │   ├── presentation/             # HTTP Controller
+│   │   │   ├── application/              # Service + application/dto
+│   │   │   ├── domain/                   # JPA Entity + Enum
+│   │   │   └── infrastructure/persistence/ # Spring Data Repository
+│   │   ├── mypage/                       # 여러 도메인을 조합하는 read model
+│   │   │   ├── presentation/
+│   │   │   └── application/
+│   │   ├── security/                     # Bearer JWT 검증 경계
+│   │   │   ├── presentation/             # JwtAuthenticationFilter
+│   │   │   ├── application/              # JwtVerifier
+│   │   │   └── infrastructure/kms/       # KmsPublicKeyProvider
+│   │   ├── health/presentation/
+│   │   └── global/config/                # SecurityConfig, AwsConfig
 │   └── compose.yaml
 │
 ├── scripts/                              # 🎬 시연 스크립트 (모노레포 루트)
@@ -349,9 +363,27 @@ backend/
 │   ├── decode_token.py                   # 11 클레임 디코더
 │   └── README.md
 │
-├── docs/PROGRESS.md                      # 작업 진행 (gitignore — 로컬 전용)
-└── README.md / CLAUDE.md                 # 본 파일 + Claude 헌법
+├── docs/                                 # ZETTY 전체 시스템 C4 문서
+│   ├── C4-as-is.md                       # 현재 runtime·data·deployment 구조
+│   ├── c4-to-be.md                       # 목표 구조·계약·전환 순서
+│   └── README.md                         # 문서 범위와 표기 규칙
+│
+└── README.md                             # 전체 계약·실행·구조 가이드
 ```
+
+### 코드를 읽는 순서
+
+| 계층 | 질문 | 대표 파일 |
+|------|------|-----------|
+| `presentation` | 어떤 HTTP 요청을 받고 무엇을 반환하는가? | [`AddressController`](api-server/src/main/java/com/zeti/api/address/presentation/AddressController.java) |
+| `application` | 어떤 유스케이스와 트랜잭션을 실행하는가? | [`AddressService`](api-server/src/main/java/com/zeti/api/address/application/AddressService.java) |
+| `domain` | 데이터와 업무 상태 변경 규칙은 무엇인가? | [`Address`](api-server/src/main/java/com/zeti/api/address/domain/Address.java) |
+| `infrastructure` | DB·KMS 같은 외부 시스템을 어떻게 연결하는가? | [`AddressRepository`](api-server/src/main/java/com/zeti/api/address/infrastructure/persistence/AddressRepository.java), [`KmsJwtSigner`](auth-server/src/main/java/com/zeti/auth/token/infrastructure/kms/KmsJwtSigner.java) |
+| `global` | 여러 도메인에 공통인 Spring 조립은 무엇인가? | [`SecurityConfig`](api-server/src/main/java/com/zeti/api/global/config/SecurityConfig.java) |
+
+`mypage`는 자체 Entity를 가지지 않고 여러 도메인의 application 결과를 조합하는 조회 유스케이스입니다.
+이번 구조는 이해하기 쉬운 **DDD-lite 첫 단계**로, JPA Entity와 Spring Data Repository의 프레임워크 결합은
+유지합니다. 추후 엄격한 hexagonal 구조가 필요할 때 repository port와 JPA adapter를 분리할 수 있습니다.
 
 ---
 
@@ -361,7 +393,7 @@ backend/
 |----------|-------|------|
 | **Language** | Java 17 (Amazon Corretto) | 고정 |
 | **Framework** | Spring Boot 3.5.x + Spring Security | |
-| **Build** | Gradle (Kotlin DSL, Wrapper) | Maven 금지 |
+| **Build** | Gradle Wrapper (auth: Kotlin DSL, api: Groovy DSL) | Maven 금지 |
 | **DB** | MySQL 8 (로컬 Docker · EC2 RDS Multi-AZ) | priv-db tier |
 | **JWT 라이브러리** | **Nimbus JOSE JWT 9.x** 만 | jjwt 금지 |
 | **AWS SDK** | AWS SDK for Java v2 | KMS · RDS · SSM |
@@ -379,15 +411,15 @@ backend/
 |----------|---------------------------|
 | 7개월간 JWT 키로 무차별 토큰 위조 | **V1** 하드코딩 키 (KMS 전환 전) |
 | 사용자 ID 순차 9자리 정수 → 열거 자명 | **V2** `Long id` (sub=140000xxx) |
-| API 인가 누락 → 임의 ID 조회 | **V3** IDOR (`/addresses/{userId}` 등 3 종) |
+| 키 유출 후 임의 사용자로 토큰 위조 | 위조 token `sub`로 자기 자원 API 호출 |
 | MFA 우회 시나리오 | **V4** MOCK OTP `"123456"` |
 
 ### 2️⃣ How — Zero Trust + KMS + UBA 탐지 인터페이스
 
-- **KMS 전환**: 동일 서명 의미 유지하며 키만 HSM 로 이동 (`auth-server/jwt/KmsJwtSigner.java`)
+- **KMS 전환**: 동일 서명 의미 유지하며 키만 HSM 로 이동 (`auth-server/src/main/java/com/zeti/auth/token/infrastructure/kms/KmsJwtSigner.java`)
 - **SG 체인**: ALB → Nginx → App → DB **5 단 분리** + 모든 인바운드는 SG 참조
 - **로그 흐름 표준화**: Nginx custom log + 11 JWT 클레임 → Filebeat → ES ingest pipeline `jwt-decode` → `filebeat-*` 색인
-- **UBA 신호 명시**: 의도된 취약점마다 **UBA 가 잡아야 할 factor** 가 코드 주석에 박혀 있음 (V3 의 `F-DiversityIPSub` 등)
+- **UBA 신호 명시**: 위조·탈취 token의 `sub`, `jti`, network fan-out과 요청량을 factor 입력으로 사용
 
 ### 3️⃣ Impact — 두 축 방어 체계의 백엔드 기여
 
@@ -395,7 +427,7 @@ backend/
 |-----|-------------------|---------------------|
 | 키 누출 시 즉시 위조 가능성 | ✅ (서버 코드에 키) | ❌ (KMS HSM, export 불가) |
 | 키 회전 가능 시점 | 배포 주기 (주 단위) | KMS API 1 콜 |
-| 인가 누락 탐지 채널 | **없음** | UBA factor (V3 → `F-DiversityIPSub` 등) |
+| 자원 인가 | path 사용자 ID를 받는 공개 API | JWT `sub` 기반 자기 자원 + repository 소유권 query |
 | 사용자 ID 추측 난이도 | 순차 (자명) | 동일 (TO-BE 에서 UUID 전환) — **탐지로 보완** |
 
 ### 4️⃣ Deliverable — UBA 가 소비하는 데이터 계약
@@ -406,7 +438,7 @@ backend/
 |--------|--------|------|
 | **11 클레임 JWT 페이로드** | log-pipeline `jwt-decode` ingest pipeline | Base64URL JWT |
 | **Nginx access log** | log-pipeline Filebeat | LTSV (sub, jti, LSID, path, status, size) |
-| **3 종 IDOR endpoint** | attack-simulation S4/S5/S6 의 enumeration target | `/addresses/{userId}` · `/orders/{userId}` · `/users/{userId}` |
+| **자기 자원 endpoint** | attack-simulation S2/S4/S5/S5b/S6/S8의 target | `/addresses` · `/orders` · `/users/me` |
 | **MOCK OTP** | attack-simulation step-up 우회 시연 | `POST /auth/stepup {code:"123456"}` |
 | **KMS public key endpoint** | api-server 내부 + 외부 검증자 | `kms:GetPublicKey` (5 분 캐시) |
 
@@ -472,8 +504,8 @@ cd /opt/zeti-backend/auth-server && SPRING_PROFILES_ACTIVE=prod ./gradlew bootRu
 | 레포 | 본 backend 와의 관계 |
 |------|----------------------|
 | [`log-pipeline`](https://github.com/ZETTY-ZEROTRUST/log-pipeline) | Nginx PEP 가 backend 로그를 Filebeat → ES 로 수집, `jwt-decode` ingest 가 11 클레임 분해 |
-| [`uba-analyzer`](https://github.com/ZETTY-ZEROTRUST/uba-analyzer) | `filebeat-*` 색인을 읽어 7 factor 채점 + LLM 추론으로 IDOR 등 탐지 |
-| [`attack-simulation`](https://github.com/ZETTY-ZEROTRUST/attack-simulation) | 본 backend 의 의도된 4 취약점을 공격하는 S2 ~ S8 시나리오 발사 |
+| [`uba-analyzer`](https://github.com/ZETTY-ZEROTRUST/uba-analyzer) | `filebeat-*` 색인을 읽어 7 factor 채점 + LLM 추론으로 토큰 위협 탐지 |
+| [`attack-simulation`](https://github.com/ZETTY-ZEROTRUST/attack-simulation) | 위조·탈취·비정상 수명 JWT를 사용하는 S2 ~ S8 시나리오 발사 |
 | [`zero-trust-architecture`](https://github.com/ZETTY-ZEROTRUST/zero-trust-architecture) | AWS 인프라 IaC (Terraform 9 모듈) — VPC / SG 체인 / ALB + WAF / Route53 / KMS — backend 가 올라가는 priv-app tier 정의 |
 | [`.github`](https://github.com/ZETTY-ZEROTRUST/.github) | Org Overview README |
 
@@ -485,7 +517,7 @@ cd /opt/zeti-backend/auth-server && SPRING_PROFILES_ACTIVE=prod ./gradlew bootRu
 |------|----------|---------------------|
 | **KISA Zero Trust Guideline 2.0** | 신원 기반 인가 + 명시적 검증 | KMS ES256 + Bearer + SG 체인 |
 | **NIST SP 800-207** | PEP/PDP 분리, micro-segmentation | priv-app/priv-db tier 분리, SG 참조 |
-| **OWASP Top 10 A01: Broken Access Control** | IDOR | **의도된 4 취약점** 으로 재현 → UBA 탐지로 보완 |
+| **OWASP API1:2023 BOLA** | 객체 소유권 검증 | 자기 자원 API와 repository 소유권 query로 예방 |
 | **OWASP A02: Cryptographic Failures** | 키 관리 | **AWS KMS HSM** + 권한 분리 (Sign/Verify) |
 | **MITRE ATT&CK T1078 (Valid Accounts)** | 탈취 토큰 사용 | attack-simulation S2 시나리오 + UBA `F-TokenHijack` |
 
@@ -495,12 +527,12 @@ cd /opt/zeti-backend/auth-server && SPRING_PROFILES_ACTIVE=prod ./gradlew bootRu
 
 ### 절대 규칙 (DO NOT)
 
-- ❌ **의도된 4 취약점에 검증 추가 금지** — 시연 자산입니다
+- ❌ 순차 `sub`, MOCK OTP, 민감 응답 fixture와 문서화된 키 유출 재현 자산을 임의 변경 금지
 - ❌ **`door_password` 평문 제거/암호화/마스킹 금지**
 - ❌ **JWT 알고리즘 HS256 등 대칭키로 변경 금지** (ES256 고정)
 - ❌ **jjwt 라이브러리 사용 금지** — Nimbus JOSE 만
 - ❌ **Maven 마이그레이션 금지** — Gradle 고정
-- ❌ **인가 미들웨어/AOP 를 IDOR endpoint 에 적용 금지**
+- ❌ path/query에서 받은 사용자 ID로 인증 주체 범위를 대체 금지
 - ❌ **AWS Account ID, IAM User 이름 하드코딩 금지**
 - ❌ **사용자 승인 없이 `git commit`/`git push` 실행 금지**
 
