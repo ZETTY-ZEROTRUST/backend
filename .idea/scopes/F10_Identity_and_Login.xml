@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="F10 · Identity &amp; Login" pattern="file:auth-server/src/main/java/com/zeti/auth/identity//*" />
+</component>

@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="F70 · MyPage" pattern="file:api-server/src/main/java/com/zeti/api/mypage//*" />
+</component>

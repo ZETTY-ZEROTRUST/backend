@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="F20 · JWT &amp; KMS Security" pattern="file:auth-server/src/main/java/com/zeti/auth/token//*||file:auth-server/src/main/java/com/zeti/auth/global/config/JwtConfig.java||file:api-server/src/main/java/com/zeti/api/security//*||file:api-server/src/main/java/com/zeti/api/global/config/AwsConfig.java||file:api-server/src/main/java/com/zeti/api/global/config/SecurityConfig.java" />
+</component>

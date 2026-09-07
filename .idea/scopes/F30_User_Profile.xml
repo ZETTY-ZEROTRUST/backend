@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="F30 · User Profile" pattern="file:api-server/src/main/java/com/zeti/api/user//*" />
+</component>

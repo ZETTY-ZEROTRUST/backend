@@ -39,7 +39,12 @@ application-secret.properties
 credentials.json
 
 # ---------- IDE / Editor ----------
-.idea/
+# IntelliJ shared scopes/file colors only; personal workspace state stays ignored.
+.idea/*
+!.idea/scopes/
+.idea/scopes/*
+!.idea/scopes/*.xml
+!.idea/fileColors.xml
 *.iml
 *.ipr
 *.iws

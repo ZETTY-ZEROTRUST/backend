@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="R40 · Architecture Docs" pattern="file:docs//*||file:README.md" />
+</component>
