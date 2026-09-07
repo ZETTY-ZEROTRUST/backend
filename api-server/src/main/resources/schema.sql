@@ -1,5 +1,5 @@
 -- ZETTY API Server: 시연용 스키마
--- 쿠팡 2025 JWT 키 유출 사고 재현용. 의도된 취약점(door_password 평문, IDOR) 포함.
+-- 쿠팡 2025 JWT 키 유출 사고 재현용. 민감 응답 fixture(door_password 평문) 포함.
 -- spring.sql.init.mode=always 환경에서 매 부팅마다 재생성되므로 DROP 우선.
 
 -- FK 역순으로 drop (의존하는 쪽부터)

@@ -1,0 +1,10 @@
+package com.zeti.api.order.infrastructure.persistence;
+
+import com.zeti.api.order.domain.OrderItem;
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
+
+    List<OrderItem> findByOrderId(Long orderId);
+}
