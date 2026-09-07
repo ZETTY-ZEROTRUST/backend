@@ -1,10 +1,9 @@
-// src/main/java/com/zeti/auth/jwt/JwtIssuer.java
-
-package com.zeti.auth.jwt;
+package com.zeti.auth.token.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.zeti.auth.token.application.port.outbound.JwtSigner;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 

@@ -1,4 +1,4 @@
-package com.zeti.auth.config;
+package com.zeti.auth.global.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

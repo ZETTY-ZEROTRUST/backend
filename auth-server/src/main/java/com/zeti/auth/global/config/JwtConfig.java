@@ -1,7 +1,7 @@
-package com.zeti.auth.config;
+package com.zeti.auth.global.config;
 
-import com.zeti.auth.jwt.JwtSigner;
-import com.zeti.auth.jwt.KmsJwtSigner;
+import com.zeti.auth.token.application.port.outbound.JwtSigner;
+import com.zeti.auth.token.infrastructure.kms.KmsJwtSigner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;

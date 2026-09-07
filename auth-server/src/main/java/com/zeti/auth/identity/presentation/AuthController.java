@@ -1,10 +1,9 @@
-// src/main/java/com/zeti/auth/domain/user/controller/AuthController.java
-package com.zeti.auth.domain.user.controller;
+package com.zeti.auth.identity.presentation;
 
-import com.zeti.auth.domain.user.dto.LoginRequest;
-import com.zeti.auth.domain.user.dto.SignupRequest;
-import com.zeti.auth.domain.user.dto.TokenResponse;
-import com.zeti.auth.domain.user.service.AuthService;
+import com.zeti.auth.identity.application.AuthService;
+import com.zeti.auth.identity.application.dto.LoginRequest;
+import com.zeti.auth.identity.application.dto.SignupRequest;
+import com.zeti.auth.identity.application.dto.TokenResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;

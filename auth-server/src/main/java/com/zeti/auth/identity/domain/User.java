@@ -1,4 +1,4 @@
-package com.zeti.auth.domain.user.entity;
+package com.zeti.auth.identity.domain;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;

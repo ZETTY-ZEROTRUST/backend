@@ -1,6 +1,6 @@
-package com.zeti.auth.domain.user.repository;
+package com.zeti.auth.identity.infrastructure.persistence;
 
-import com.zeti.auth.domain.user.entity.User;
+import com.zeti.auth.identity.domain.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 
