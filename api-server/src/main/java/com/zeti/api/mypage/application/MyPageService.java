@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class MyPageService {
 
-    private static final int RECENT_ORDER_LIMIT = 5;
 
     private final UserService userService;
     private final AddressService addressService;
@@ -32,9 +31,7 @@ public class MyPageService {
         List<AddressResponse> addresses = addressService.listByUserId(userId);
         AddressResponse defaultAddress = addresses.isEmpty() ? null : addresses.get(0);
 
-        List<OrderSummaryResponse> recentOrders = orderService.listByUserId(userId).stream()
-                .limit(RECENT_ORDER_LIMIT)
-                .toList();
+        List<OrderSummaryResponse> recentOrders = orderService.recentByUserId(userId);
 
         List<PaymentResponse> payments = paymentService.listBalances(userId);
 

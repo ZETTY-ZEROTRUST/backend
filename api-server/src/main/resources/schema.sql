@@ -76,3 +76,6 @@ CREATE TABLE payment_history (
   paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (payment_id) REFERENCES payments(payment_id)
 );
+
+-- 마이페이지 최근 주문·주문 목록 페이지네이션용. user_id로 seek 후 ordered_at 역순 정렬(filesort 제거).
+CREATE INDEX idx_orders_user_ordered ON orders (user_id, ordered_at DESC);
