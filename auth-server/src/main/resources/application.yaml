@@ -1,5 +1,40 @@
 spring:
   application:
     name: auth-server
-  profiles:
-    active: local # 기본 실행 환경을 local로 설정
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+
+server:
+  port: 8080
+
+management:
+  server:
+    port: 9090
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+jwt:
+  # 기존 운영 설정값 유지. 합의 목표(900초)는 v2:start 사이클에서 반영한다.
+  expiration: 600
+
+zetty:
+  kms:
+    # 비워두면 AWS 기본 공급자. 로컬 Compose는 에뮬레이터 URL을 주입한다.
+    endpoint: ${ZETTY_KMS_ENDPOINT:}
+    region: ${ZETTY_KMS_REGION:ap-northeast-2}
+  jwt:
+    kms-key-id: ${ZETTY_JWT_KMS_KEY_ID:alias/zetty-jwt-signing}

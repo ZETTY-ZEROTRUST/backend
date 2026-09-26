@@ -17,24 +17,21 @@ public class JwtIssuer {
     private final JwtSigner jwtSigner;
     private final ObjectMapper objectMapper;
     private final long expiration;
-    private final String kid;
 
     public JwtIssuer(
             JwtSigner jwtSigner,
             ObjectMapper objectMapper,
-            @Value("${jwt.expiration}") long expiration,
-            @Value("${jwt.kid}") String kid
+            @Value("${jwt.expiration}") long expiration
     ) {
         this.jwtSigner = jwtSigner;
         this.objectMapper = objectMapper;
         this.expiration = expiration;
-        this.kid = kid;
     }
 
     public String issue(Long userId) throws Exception {
         String headerJson = """
-            {"alg":"ES256","kid":"%s","typ":"JWT"}
-            """.strip().formatted(kid);
+            {"alg":"RS256","kid":"%s","typ":"JWT"}
+            """.strip().formatted(jwtSigner.keyId());
         String header = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(headerJson.getBytes(StandardCharsets.UTF_8));
 
