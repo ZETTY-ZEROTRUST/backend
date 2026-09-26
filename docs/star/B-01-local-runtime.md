@@ -1,6 +1,6 @@
 # B-01 AWS 없는 로컬 런타임: Java 21·RS256·로컬 KMS·JWKS
 
-- 상태: 계획
+- 상태: 완료
 - 연결: Jira A-01 · zero-trust-architecture `docs/star/Z-01`, `Z-02`
 - 작성/갱신: 2026-09-26
 
@@ -47,6 +47,16 @@
 
 ## R — 개선 결과
 
-미측정.
+| 지표 | 결과 | 근거 |
+|---|---|---|
+| Java 21 컨테이너 `test bootJar` | 통과 (auth 2, api 7, 실패 0) | temurin:21에서 실행 |
+| AWS 없이 Compose 기동 | 성공 | 전 서비스 healthy |
+| 로그인→RS256→API | 성공 | `/auth/login` accessToken(RS256), `/users/me` 200 |
+| 무토큰 / 변조 서명 | 각각 401 | smoke |
+| API의 KMS 접근 | 없음 | JWKS만 조회 |
+
+### 시행착오
+- `JwksPublicKeyProvider`에 생성자가 둘이라 Spring이 기본 생성자를 찾다 실패 → 공개 생성자에 `@Autowired`.
+- 응답 필드는 `token`이 아니라 `accessToken`(기존 DTO 유지).
 
 ## 자소서 한 줄 (R 확정 후)
