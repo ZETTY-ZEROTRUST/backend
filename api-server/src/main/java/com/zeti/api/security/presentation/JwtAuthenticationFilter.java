@@ -1,6 +1,7 @@
 package com.zeti.api.security.presentation;
 
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.zeti.api.security.application.AuthStateChecker;
 import com.zeti.api.security.application.JwtVerifier;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -23,6 +24,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtVerifier jwtVerifier;
+    private final AuthStateChecker authStateChecker;
 
     @Override
     protected void doFilterInternal(
@@ -40,6 +42,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             JWTClaimsSet claims = jwtVerifier.verify(token);
             Long userId = Long.parseLong(claims.getSubject());
+
+            // 매 요청 원본 상태 확인: authVersion 불일치(로그아웃·권한 회수)면 거부.
+            Object authv = claims.getClaim("authv");
+            if (!(authv instanceof Number) || !authStateChecker.isCurrent(userId, ((Number) authv).intValue())) {
+                SecurityContextHolder.clearContext();
+                chain.doFilter(request, response);
+                return;
+            }
 
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(

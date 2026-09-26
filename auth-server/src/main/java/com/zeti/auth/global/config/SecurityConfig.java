@@ -21,6 +21,8 @@ public class SecurityConfig {
                                 "/hello",
                                 "/auth/signup",
                                 "/auth/login",
+                                "/auth/refresh",
+                                "/auth/logout",
                                 "/.well-known/jwks.json",
                                 "/error",
                                 "/actuator/**"

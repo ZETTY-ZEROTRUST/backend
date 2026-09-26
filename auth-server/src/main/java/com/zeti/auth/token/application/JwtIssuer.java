@@ -28,7 +28,7 @@ public class JwtIssuer {
         this.expiration = expiration;
     }
 
-    public String issue(Long userId) throws Exception {
+    public String issue(Long userId, int authVersion) throws Exception {
         String headerJson = """
             {"alg":"RS256","kid":"%s","typ":"JWT"}
             """.strip().formatted(jwtSigner.keyId());
@@ -64,6 +64,7 @@ public class JwtIssuer {
         scpArray.add("core");
 
         payload.put("sub", String.valueOf(userId));
+        payload.put("authv", authVersion);
 
         if (expiration > 0) {
             payload.put("exp", now + expiration);
