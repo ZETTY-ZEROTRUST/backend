@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS addresses;
+DROP TABLE IF EXISTS token_ledger;
 DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS users;
 
@@ -36,6 +37,18 @@ CREATE TABLE refresh_tokens (
 );
 CREATE INDEX idx_rt_family ON refresh_tokens (family_id);
 CREATE INDEX idx_rt_user ON refresh_tokens (user_id);
+
+-- token_ledger: 발급 증명(S3). Auth만 기록. 정확히 발급한 compact JWT의 SHA-256 digest와 대조한다.
+CREATE TABLE token_ledger (
+  jti CHAR(36) PRIMARY KEY,
+  digest CHAR(64) NOT NULL,
+  sub BIGINT NOT NULL,
+  kid VARCHAR(128) NOT NULL,
+  status ENUM('ACTIVE','REVOKED') NOT NULL DEFAULT 'ACTIVE',
+  issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NOT NULL
+);
+CREATE INDEX idx_ledger_sub ON token_ledger (sub);
 
 -- addresses: 배송지 주소록 유출 재현 (가장 민감)
 CREATE TABLE addresses (

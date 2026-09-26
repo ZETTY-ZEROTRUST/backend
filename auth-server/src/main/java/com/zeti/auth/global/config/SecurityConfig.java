@@ -25,7 +25,8 @@ public class SecurityConfig {
                                 "/auth/logout",
                                 "/.well-known/jwks.json",
                                 "/error",
-                                "/actuator/**"
+                                "/actuator/**",
+                                "/lab/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 );

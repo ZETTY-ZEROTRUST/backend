@@ -7,6 +7,7 @@ import com.zeti.auth.identity.domain.User;
 import com.zeti.auth.identity.infrastructure.persistence.UserRepository;
 import com.zeti.auth.token.application.JwtIssuer;
 import com.zeti.auth.token.application.RefreshTokenService;
+import com.zeti.auth.token.application.TokenLedgerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtIssuer jwtIssuer;
     private final RefreshTokenService refreshTokenService;
+    private final TokenLedgerService tokenLedgerService;
 
     @Transactional
     public void signup(SignupRequest request) {
@@ -41,9 +43,10 @@ public class AuthService {
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않습니다.");
         }
-        String accessToken = jwtIssuer.issue(user.getUserId(), user.getAuthVersion());
+        JwtIssuer.Issued at = jwtIssuer.issue(user.getUserId(), user.getAuthVersion());
+        tokenLedgerService.record(at, user.getUserId());
         RefreshTokenService.Issued rt = refreshTokenService.issueNewFamily(user.getUserId());
-        return new TokenResponse(accessToken, rt.rawToken());
+        return new TokenResponse(at.token(), rt.rawToken());
     }
 
     /** RT 회전. 재사용 감지 시 rotate가 자체 트랜잭션에서 family를 폐기(커밋)한 뒤 예외를 던진다.
@@ -58,8 +61,9 @@ public class AuthService {
         }
         User user = userRepository.findById(r.userId())
                 .orElseThrow(() -> new IllegalArgumentException("사용자 없음"));
-        String accessToken = jwtIssuer.issue(user.getUserId(), user.getAuthVersion());
-        return new TokenResponse(accessToken, r.next().rawToken());
+        JwtIssuer.Issued at = jwtIssuer.issue(user.getUserId(), user.getAuthVersion());
+        tokenLedgerService.record(at, user.getUserId());
+        return new TokenResponse(at.token(), r.next().rawToken());
     }
 
     /** 전체 로그아웃: authVersion 증가(기존 AT 무효화) + 모든 RT family 폐기. */

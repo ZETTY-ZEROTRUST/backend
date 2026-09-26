@@ -2,6 +2,7 @@ package com.zeti.api.security.presentation;
 
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.zeti.api.security.application.AuthStateChecker;
+import com.zeti.api.security.application.LedgerVerifier;
 import com.zeti.api.security.application.JwtVerifier;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -25,6 +26,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtVerifier jwtVerifier;
     private final AuthStateChecker authStateChecker;
+    private final LedgerVerifier ledgerVerifier;
 
     @Override
     protected void doFilterInternal(
@@ -46,6 +48,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // 매 요청 원본 상태 확인: authVersion 불일치(로그아웃·권한 회수)면 거부.
             Object authv = claims.getClaim("authv");
             if (!(authv instanceof Number) || !authStateChecker.isCurrent(userId, ((Number) authv).intValue())) {
+                SecurityContextHolder.clearContext();
+                chain.doFilter(request, response);
+                return;
+            }
+
+            // 발급 증명: 서명이 유효해도 실제 발급된 토큰(대장에 digest 존재)인지 확인.
+            if (!ledgerVerifier.isIssued(token, claims.getJWTID(), userId)) {
                 SecurityContextHolder.clearContext();
                 chain.doFilter(request, response);
                 return;
