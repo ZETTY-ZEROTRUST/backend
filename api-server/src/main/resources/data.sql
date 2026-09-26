@@ -1,4 +1,5 @@
 -- ZETTY API Server: 시연용 더미 데이터
+-- 시드 계정 공용 비밀번호(로컬 부하/시나리오용): loadtest-pw-1234 (bcrypt)
 -- 500명 + 쿠팡 유출 카테고리(이름/이메일/주소록/현관비번/주문 5건/결제) 전 영역 재현.
 -- 매 부팅마다 schema.sql 직후 자동 실행 (sql.init.mode=always).
 
@@ -15,7 +16,7 @@ SELECT n FROM r;
 INSERT INTO users (email, password_hash, name, phone)
 SELECT
   CONCAT('user', LPAD(n, 3, '0'), '@zetty.test'),
-  'demo-password-hash-not-real',
+  '$2y$10$eCkaASmGF5oAkwBqJbSSFOg7r63MmLkAN5sXAbklAdC4UwUGzelna',
   CONCAT('사용자', LPAD(n, 3, '0')),
   CONCAT('010-', LPAD((n * 37) % 10000, 4, '0'), '-', LPAD((n * 113) % 10000, 4, '0'))
 FROM tmp_seq;
