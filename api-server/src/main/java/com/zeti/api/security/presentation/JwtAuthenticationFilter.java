@@ -2,7 +2,11 @@ package com.zeti.api.security.presentation;
 
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.zeti.api.security.application.AuthStateChecker;
+import com.zeti.api.security.application.AuthStateCache;
 import com.zeti.api.security.application.LedgerVerifier;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import com.zeti.api.security.application.JwtVerifier;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -27,6 +31,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtVerifier jwtVerifier;
     private final AuthStateChecker authStateChecker;
     private final LedgerVerifier ledgerVerifier;
+    private final AuthStateCache authStateCache;
 
     @Override
     protected void doFilterInternal(
@@ -46,18 +51,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Long userId = Long.parseLong(claims.getSubject());
 
             // 매 요청 원본 상태 확인: authVersion 불일치(로그아웃·권한 회수)면 거부.
-            Object authv = claims.getClaim("authv");
-            if (!(authv instanceof Number) || !authStateChecker.isCurrent(userId, ((Number) authv).intValue())) {
+            Object authvClaim = claims.getClaim("authv");
+            if (!(authvClaim instanceof Number)) {
                 SecurityContextHolder.clearContext();
                 chain.doFilter(request, response);
                 return;
             }
+            int authVersion = ((Number) authvClaim).intValue();
+            String jti = claims.getJWTID();
+            String digest = sha256Hex(token);
 
-            // 발급 증명: 서명이 유효해도 실제 발급된 토큰(대장에 digest 존재)인지 확인.
-            if (!ledgerVerifier.isIssued(token, claims.getJWTID(), userId)) {
-                SecurityContextHolder.clearContext();
-                chain.doFilter(request, response);
-                return;
+            // positive cache 적중 시 DB 조회(authVersion+대장)를 건너뛴다.
+            if (!authStateCache.isValidated(jti, userId, authVersion, digest)) {
+                // 원본 확인: 매 요청 authVersion 대조 + 발급 대장 digest 대조.
+                if (!authStateChecker.isCurrent(userId, authVersion)
+                        || !ledgerVerifier.isIssued(token, jti, userId)) {
+                    SecurityContextHolder.clearContext();
+                    chain.doFilter(request, response);
+                    return;
+                }
+                authStateCache.store(jti, userId, authVersion, digest);
             }
 
             UsernamePasswordAuthenticationToken auth =
@@ -71,5 +84,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         chain.doFilter(request, response);
+    }
+
+    private static String sha256Hex(String s) {
+        try {
+            byte[] d = MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(d);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

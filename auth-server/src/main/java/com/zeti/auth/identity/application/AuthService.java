@@ -8,6 +8,9 @@ import com.zeti.auth.identity.infrastructure.persistence.UserRepository;
 import com.zeti.auth.token.application.JwtIssuer;
 import com.zeti.auth.token.application.RefreshTokenService;
 import com.zeti.auth.token.application.TokenLedgerService;
+import com.zeti.auth.token.application.AuthStateCacheInvalidator;
+import com.zeti.auth.token.infrastructure.persistence.TokenLedgerRepository;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -22,6 +25,8 @@ public class AuthService {
     private final JwtIssuer jwtIssuer;
     private final RefreshTokenService refreshTokenService;
     private final TokenLedgerService tokenLedgerService;
+    private final TokenLedgerRepository tokenLedgerRepository;
+    private final AuthStateCacheInvalidator cacheInvalidator;
 
     @Transactional
     public void signup(SignupRequest request) {
@@ -71,8 +76,12 @@ public class AuthService {
     public void logoutAll(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자 없음"));
+        // 캐시 무효화용 jti는 대장 폐기 전에 확보한다.
+        List<String> jtis = tokenLedgerRepository.activeJtisOf(userId);
         user.bumpAuthVersion();
         refreshTokenService.revokeAllForUser(userId);
+        tokenLedgerRepository.revokeAllForUser(userId);
+        cacheInvalidator.invalidate(jtis);
     }
 
     public static class ReuseDetectedException extends RuntimeException {
