@@ -81,6 +81,44 @@
   - 대상 해석은 SUBJECT 가명만 지원한다. SESSION/IP는 `REJECTED/TARGET_OUT_OF_SCOPE`(세션→userId 매핑은 유지하지 않음).
 - 미측정: 단계별 처리 시간(성능), `attack-simulation` 러너로 실제 스택 재공격(집행 후 재요청 차단율)은 별도 단계.
 
+## A(추가) — compose 배선 + 실제 스택 종단 검증 (계획)
+
+단위/통합 테스트(H2)는 집행 로직을 검증하지만, **운영 DDL·최소권한 grant·내부 전용 노출·가명 역매핑 upsert**는 실제 스택에서만 확인된다. Codex의 탐지 모델 없이도, 손으로 만든 대응 명령을 집행 경로에 넣어 **탐지→정책→집행 루프의 집행 절반**을 실증한다(탐지 절반은 Codex 몫).
+
+1. **배선**: `gen-secrets.sh`에 auth_app의 `actor_identity_map`·`response_command_log` grant 추가(api/bff는 접근 없음). 스키마는 backend-resp의 `schema.sql`(새 테이블·`users.locked` 포함)을 mysql-init로 재생성. `BACKEND_PATH=backend-resp`로 스택 기동(auth=집행 코드 포함, api=VT 제외·기본 동일).
+2. **내부 전용 확인**: edge(nginx)로 `/internal/response-commands` 호출 시 auth에 닿지 않음(=`/`→api→404), auth는 host 포트 미노출. 명령 투입은 compose 네트워크 안(`application`)에서만.
+3. **종단 시나리오**(대상 해석은 DB의 `actor_identity_map`에서 subject_key를 읽어 실제 가명으로 명령 구성):
+   - 로그인 → `actor_identity_map`에 subject_key↦userId upsert 확인.
+   - DRY_RUN LOCK_ACCOUNT → `status=DRY_RUN`, `locked` 불변, 로그인 계속 성공.
+   - ENFORCE LOCK_ACCOUNT → `status=APPLIED`, `locked=true`, authVersion++, RT family·대장 폐기, 이후 **로그인 400(잠금)**.
+   - 같은 command_id 재전송 → `ALREADY_APPLIED`, 추가 상태 변경 없음(멱등).
+   - synthetic ENFORCE → `REJECTED/ENVIRONMENT_MISMATCH`.
+   - `response_command_log`에 기록, RESPONSE_APPLIED가 secret·raw userId 없이 Outbox→ES까지(analysis profile) 전달.
+   - 마무리: `unlockAccount`로 계정 원복(lab 재현성).
+
+## R(추가) — 실제 스택 종단 검증 결과 (실측)
+
+BACKEND_PATH=backend-resp로 auth 재빌드, 실행 중 MySQL에 추가형 DDL(actor_identity_map·response_command_log·users.locked)과 auth_app grant만 적용(볼륨 파괴 없음). user001로 종단 시나리오 실행:
+
+| 단계 | 명령 | 결과(response-result) | 상태 변화 | 로그인 |
+|---|---|---|---|---|
+| 로그인 | — | 200 | actor_identity_map에 subject_key↦userId **upsert**(43자 base64url 가명) | 200 |
+| DRY_RUN | LOCK_ACCOUNT / local-lab | `DRY_RUN`, NONE | authVersion·locked **불변** | 200 |
+| ENFORCE | LOCK_ACCOUNT / local-lab / expected=현재ver | `APPLIED`, applied_at 기록 | **authVersion 2→3, locked=1**, RT family·대장 폐기 | **400(잠금)** |
+| 재전송 | 같은 command_id | `ALREADY_APPLIED`, **applied_at 동일** | authVersion **재증가 없음**(멱등) | 400 |
+| synthetic | ENFORCE / synthetic | `REJECTED / ENVIRONMENT_MISMATCH` | 불변 | — |
+| 원복 | (운영 unlock) | — | locked=0 | 200 |
+
+- `response_command_log` 3행 확인: DRY_RUN→`DRY_RUN`(observed_ver=현재), ENFORCE→`APPLIED`, synthetic→`REJECTED/ENVIRONMENT_MISMATCH`(observed=NULL, 대상 해석 전 거부).
+- **내부 전용 실증**: edge(nginx)는 `/internal`을 auth로 라우팅하지 않고(`/`→api→404), auth는 host 포트 미노출. 명령 투입은 compose 네트워크 안(`auth:8080`)에서만 가능.
+- 대상 해석: 명령은 raw userId가 아닌 **가명(subject_key)** 만 싣고, 집행 측 `actor_identity_map`으로만 userId를 얻음(위조 명령으로 임의 계정 집행 불가).
+
+### 집행 이벤트(RESPONSE_APPLIED)의 전달 — 파이프라인 장애 발견·해결(교차 연결 `log-pipeline/P-03`)
+
+집행 트랜잭션이 남긴 RESPONSE_APPLIED가 **Outbox에 정상 적재**됨(감사-후-집행 성립). 종단(ES)을 확인하려다 **파이프라인 정지**를 발견: 이전 부하 시험 22만 건으로 redis-events(maxmemory 256M, noeviction)의 스트림이 가득 차 XADD가 OOM 거부 → relay 정체(Outbox PENDING 20만+ 미배출). indexer가 색인 후 스트림을 트림하지 않은 게 원인. **indexer에 "색인·ACK 후 MINID 트림"을 추가(P-03)** 해 메모리 256M→11.6M 회수, Outbox 205,075→**0**(약 42초) 배출. RESPONSE_APPLIED는 Outbox `PUBLISHED`로 스트림 발행 완료 후 **ES 색인 도달 확인**(ES `event_type:RESPONSE_APPLIED` **count=4**, 스트림 배출 완료). 집행→감사→Outbox→Streams→ES **전 구간 종단 성립**(DLQ=0, 유실 없음).
+
+- 검증: auth-server 33/33(재실행), 실제 스택 종단 표의 전 항목 통과. 미측정: 단계별 처리 시간(성능).
+
 ## 자소서 한 줄 (R 확정 후)
 
 탐지·정책이 만든 대응 명령을 집행 측이 다시 검증(멱등 command_id·만료·환경 allowlist·상태 version·가명 역해석)하고, 회수·잠금·감사 이벤트를 한 트랜잭션으로 집행하는 경로를 구현해 통합 11건으로 DRY_RUN 안전 기본값과 멱등·거부 경로를 검증했다.
