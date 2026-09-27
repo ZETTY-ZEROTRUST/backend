@@ -19,22 +19,33 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class MyPageService {
 
-    private static final int RECENT_ORDER_LIMIT = 5;
 
     private final UserService userService;
     private final AddressService addressService;
     private final OrderService orderService;
     private final PaymentService paymentService;
+    private final MyPageCache myPageCache;
 
     public MyPageResponse getMyPage(Long userId) {
+        if (myPageCache.isEnabled()) {
+            var cached = myPageCache.get(userId);
+            if (cached.isPresent()) {
+                return cached.get();
+            }
+            MyPageResponse loaded = load(userId);
+            myPageCache.put(userId, loaded);
+            return loaded;
+        }
+        return load(userId);
+    }
+
+    private MyPageResponse load(Long userId) {
         UserResponse user = userService.getById(userId);
 
         List<AddressResponse> addresses = addressService.listByUserId(userId);
         AddressResponse defaultAddress = addresses.isEmpty() ? null : addresses.get(0);
 
-        List<OrderSummaryResponse> recentOrders = orderService.listByUserId(userId).stream()
-                .limit(RECENT_ORDER_LIMIT)
-                .toList();
+        List<OrderSummaryResponse> recentOrders = orderService.recentByUserId(userId);
 
         List<PaymentResponse> payments = paymentService.listBalances(userId);
 

@@ -1,4 +1,9 @@
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 300ms
   application:
     name: api-server
   datasource:
@@ -6,6 +11,9 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      connection-timeout: ${DB_CONN_TIMEOUT_MS:5000}
   jpa:
     open-in-view: false
     hibernate:
@@ -19,6 +27,12 @@ spring:
 
 server:
   port: 8081
+  tomcat:
+    # 기본값은 Spring 기본값. 과부하 시 무한 적체 대신 거절하도록 env로 상한을 둔다.
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:8192}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:100}
+    threads:
+      max: ${TOMCAT_THREADS_MAX:200}
 
 management:
   server:
@@ -31,6 +45,9 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    redis:
+      enabled: false
 
 zetty:
   jwt:

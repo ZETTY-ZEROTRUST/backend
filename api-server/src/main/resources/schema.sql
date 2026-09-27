@@ -8,6 +8,8 @@ DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS addresses;
+DROP TABLE IF EXISTS token_ledger;
+DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS users;
 
 -- users: 이름, 이메일 유출 재현
@@ -17,8 +19,36 @@ CREATE TABLE users (
   password_hash VARCHAR(255) NOT NULL,
   name VARCHAR(100) NOT NULL,
   phone VARCHAR(20),
+  auth_version INT NOT NULL DEFAULT 0,   -- 전체 로그아웃/권한 회수 시 증가. AT 클레임과 대조.
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) AUTO_INCREMENT = 140000000;  -- 쿠팡 9자리 정수 모방
+
+-- refresh_tokens: RT 회전·재사용 감지·family 폐기(S2). 원문 RT는 저장하지 않고 SHA-256 해시만.
+CREATE TABLE refresh_tokens (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  family_id CHAR(36) NOT NULL,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  generation INT NOT NULL,
+  status ENUM('ACTIVE','CONSUMED','REVOKED') NOT NULL DEFAULT 'ACTIVE',
+  issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+CREATE INDEX idx_rt_family ON refresh_tokens (family_id);
+CREATE INDEX idx_rt_user ON refresh_tokens (user_id);
+
+-- token_ledger: 발급 증명(S3). Auth만 기록. 정확히 발급한 compact JWT의 SHA-256 digest와 대조한다.
+CREATE TABLE token_ledger (
+  jti CHAR(36) PRIMARY KEY,
+  digest CHAR(64) NOT NULL,
+  sub BIGINT NOT NULL,
+  kid VARCHAR(128) NOT NULL,
+  status ENUM('ACTIVE','REVOKED') NOT NULL DEFAULT 'ACTIVE',
+  issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NOT NULL
+);
+CREATE INDEX idx_ledger_sub ON token_ledger (sub);
 
 -- addresses: 배송지 주소록 유출 재현 (가장 민감)
 CREATE TABLE addresses (
@@ -76,3 +106,9 @@ CREATE TABLE payment_history (
   paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (payment_id) REFERENCES payments(payment_id)
 );
+
+-- 마이페이지 최근 주문·주문 목록 페이지네이션용. user_id로 seek 후 ordered_at 역순 정렬(filesort 제거).
+CREATE INDEX idx_orders_user_ordered ON orders (user_id, ordered_at DESC);
+
+-- 마이페이지 주소 정렬(user_id, is_default DESC, address_id) filesort 제거.
+CREATE INDEX idx_addr_user_default ON addresses (user_id, is_default DESC, address_id);

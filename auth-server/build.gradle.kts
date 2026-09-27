@@ -37,6 +37,7 @@ dependencies {
 	implementation("software.amazon.awssdk:kms")
 	implementation("com.nimbusds:nimbus-jose-jwt:9.40")
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
+	implementation("org.springframework.boot:spring-boot-starter-data-redis")
 	runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 	testRuntimeOnly("com.h2database:h2")
 }

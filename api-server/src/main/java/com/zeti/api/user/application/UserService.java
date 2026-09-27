@@ -4,6 +4,7 @@ import com.zeti.api.user.application.dto.UserResponse;
 import com.zeti.api.user.application.dto.UserUpdateRequest;
 import com.zeti.api.user.domain.User;
 import com.zeti.api.user.infrastructure.persistence.UserRepository;
+import com.zeti.api.mypage.application.MyPageCache;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final MyPageCache myPageCache;
 
     public UserResponse getById(Long userId) {
         User user = userRepository.findById(userId)
@@ -28,6 +30,7 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         user.updateProfile(request.name(), request.phone());
+        myPageCache.evictAfterCommit(userId);
         return UserResponse.from(user);
     }
 }

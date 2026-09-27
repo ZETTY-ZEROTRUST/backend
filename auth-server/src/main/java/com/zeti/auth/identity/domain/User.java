@@ -29,6 +29,9 @@ public class User {
     @Column
     private String phone;
 
+    @Column(name = "auth_version", nullable = false)
+    private int authVersion;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -40,5 +43,10 @@ public class User {
         user.name = name;
         user.phone = phone;
         return user;
+    }
+
+    /** 전체 로그아웃·권한 회수 시 증가. 기존 AT는 다음 검증에서 거부된다. */
+    public void bumpAuthVersion() {
+        this.authVersion += 1;
     }
 }

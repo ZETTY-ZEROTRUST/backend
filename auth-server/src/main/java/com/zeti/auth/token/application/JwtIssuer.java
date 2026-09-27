@@ -28,7 +28,9 @@ public class JwtIssuer {
         this.expiration = expiration;
     }
 
-    public String issue(Long userId) throws Exception {
+    public record Issued(String token, String jti, String digest, long expiresAtEpoch, String kid) {}
+
+    public Issued issue(Long userId, int authVersion) throws Exception {
         String headerJson = """
             {"alg":"RS256","kid":"%s","typ":"JWT"}
             """.strip().formatted(jwtSigner.keyId());
@@ -56,7 +58,8 @@ public class JwtIssuer {
 
         payload.put("iat", now);
         payload.put("iss", "https://auth.zeti.com/");
-        payload.put("jti", UUID.randomUUID().toString());
+        String jti = UUID.randomUUID().toString();
+        payload.put("jti", jti);
         payload.put("nbf", now);
 
         ArrayNode scpArray = payload.putArray("scp");
@@ -64,6 +67,7 @@ public class JwtIssuer {
         scpArray.add("core");
 
         payload.put("sub", String.valueOf(userId));
+        payload.put("authv", authVersion);
 
         if (expiration > 0) {
             payload.put("exp", now + expiration);
@@ -75,7 +79,20 @@ public class JwtIssuer {
 
         String headerPayload = header + "." + payloadEncoded;
         String signature = jwtSigner.sign(headerPayload);
+        String compact = headerPayload + "." + signature;
 
-        return headerPayload + "." + signature;
+        String digest = sha256Hex(compact);
+        long exp = expiration > 0 ? now + expiration : 0;
+        return new Issued(compact, jti, digest, exp, jwtSigner.keyId());
+    }
+
+    private static String sha256Hex(String s) {
+        try {
+            byte[] d = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(d);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

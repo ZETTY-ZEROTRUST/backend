@@ -51,7 +51,7 @@ class KmsJwtSignerTest {
 
     @Test
     void issuedTokenIsRs256AndVerifiableWithPublishedJwk() throws Exception {
-        String token = new JwtIssuer(signer, new ObjectMapper(), 600).issue(140000001L);
+        String token = new JwtIssuer(signer, new ObjectMapper(), 600).issue(140000001L, 0).token();
         SignedJWT jwt = SignedJWT.parse(token);
 
         assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.RS256);
