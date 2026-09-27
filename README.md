@@ -22,10 +22,10 @@
 
 > ⚠️ 순차 `sub`, MOCK OTP, `door_password` 응답과 문서화된 키 유출 재현 자산은 실험 계약입니다. 자원 API의 소유권 검사는 항상 유지합니다.
 
-> 전체 여섯 저장소의 아키텍처는 [`docs/C4-as-is.md`](docs/C4-as-is.md)와
+> 전체 네 개 활성 저장소(backend·log-pipeline·attack-simulation·zero-trust-architecture)의 아키텍처는 [`docs/C4-as-is.md`](docs/C4-as-is.md)와
 > [`docs/c4-to-be.md`](docs/c4-to-be.md)에서 Context → Container → Component → Deployment 순서로 설명합니다.
 > 웹 인증 재설계 제안은 [`docs/auth-token-architecture.md`](docs/auth-token-architecture.md)를 참고하세요.
-> BFF의 토큰 저장·세션·갱신·폐기와 UBA 입력 변경을 다루며, 아직 구현·배포된 구조는 아닙니다.
+> BFF의 토큰 저장·세션·갱신·폐기와 탐지 입력 변경을 다루며, 아직 구현·배포된 구조는 아닙니다.
 
 ---
 
@@ -44,7 +44,7 @@ cd backend/scripts
 | 4 | `06_negative.sh` | 토큰 없는/잘못된 호출 | 401 (정상 거부) |
 | 5 | `07_forged_token.sh` | **유출된 실험 키로 victim `sub` 토큰 위조** | 자기 자원 API에서 victim 데이터 반환 |
 
-→ 4 ~ 5 단계의 비정상 트래픽이 **`log-pipeline` 으로 흘러 들어가 `uba-analyzer` 가 탐지**합니다. 이 시연 흐름이 **ZETI 전체 시스템의 input event** 입니다.
+→ 4 ~ 5 단계의 비정상 트래픽이 **`log-pipeline` 으로 흘러 들어가 v2 이상탐지(서비스 이벤트 IsolationForest)가 탐지**하고, incident로 묶여 LLM 보고까지 이어집니다. 이 시연 흐름이 **ZETI 전체 시스템의 input event** 입니다.
 
 ---
 
@@ -419,7 +419,7 @@ backend/
 - **KMS 전환**: 동일 서명 의미 유지하며 키만 HSM 로 이동 (`auth-server/src/main/java/com/zeti/auth/token/infrastructure/kms/KmsJwtSigner.java`)
 - **SG 체인**: ALB → Nginx → App → DB **5 단 분리** + 모든 인바운드는 SG 참조
 - **로그 흐름 표준화**: Nginx custom log + 11 JWT 클레임 → Filebeat → ES ingest pipeline `jwt-decode` → `filebeat-*` 색인
-- **UBA 신호 명시**: 위조·탈취 token의 `sub`, `jti`, network fan-out과 요청량을 factor 입력으로 사용
+- **탐지 신호 명시**: 위조·탈취 token의 `sub`, `jti`, network fan-out과 요청량을 v2 IsolationForest 이상탐지의 입력 특징으로 사용
 
 ### 3️⃣ Impact — 두 축 방어 체계의 백엔드 기여
 
@@ -430,15 +430,15 @@ backend/
 | 자원 인가 | path 사용자 ID를 받는 공개 API | JWT `sub` 기반 자기 자원 + repository 소유권 query |
 | 사용자 ID 추측 난이도 | 순차 (자명) | 동일 (TO-BE 에서 UUID 전환) — **탐지로 보완** |
 
-### 4️⃣ Deliverable — UBA 가 소비하는 데이터 계약
+### 4️⃣ Deliverable — 탐지 파이프라인이 소비하는 데이터 계약
 
 본 backend 가 산출하고 다른 레포가 의존하는 인터페이스:
 
 | 산출물 | 소비처 | 형식 |
 |--------|--------|------|
-| **11 클레임 JWT 페이로드** | log-pipeline `jwt-decode` ingest pipeline | Base64URL JWT |
+| **11 클레임 JWT 페이로드** | log-pipeline `jwt-decode` ingest pipeline → v2 이상탐지 | Base64URL JWT |
 | **Nginx access log** | log-pipeline Filebeat | LTSV (sub, jti, LSID, path, status, size) |
-| **자기 자원 endpoint** | attack-simulation S2/S4/S5/S5b/S6/S8의 target | `/addresses` · `/orders` · `/users/me` |
+| **자기 자원 endpoint** | attack-simulation 검증 시나리오의 target | `/addresses` · `/orders` · `/users/me` |
 | **MOCK OTP** | attack-simulation step-up 우회 시연 | `POST /auth/stepup {code:"123456"}` |
 | **KMS public key endpoint** | api-server 내부 + 외부 검증자 | `kms:GetPublicKey` (5 분 캐시) |
 
@@ -503,10 +503,9 @@ cd /opt/zeti-backend/auth-server && SPRING_PROFILES_ACTIVE=prod ./gradlew bootRu
 
 | 레포 | 본 backend 와의 관계 |
 |------|----------------------|
-| [`log-pipeline`](https://github.com/ZETTY-ZEROTRUST/log-pipeline) | Nginx PEP 가 backend 로그를 Filebeat → ES 로 수집, `jwt-decode` ingest 가 11 클레임 분해 |
-| [`uba-analyzer`](https://github.com/ZETTY-ZEROTRUST/uba-analyzer) | `filebeat-*` 색인을 읽어 7 factor 채점 + LLM 추론으로 토큰 위협 탐지 |
-| [`attack-simulation`](https://github.com/ZETTY-ZEROTRUST/attack-simulation) | 위조·탈취·비정상 수명 JWT를 사용하는 S2 ~ S8 시나리오 발사 |
-| [`zero-trust-architecture`](https://github.com/ZETTY-ZEROTRUST/zero-trust-architecture) | AWS 인프라 IaC (Terraform 9 모듈) — VPC / SG 체인 / ALB + WAF / Route53 / KMS — backend 가 올라가는 priv-app tier 정의 |
+| [`log-pipeline`](https://github.com/ZETTY-ZEROTRUST/log-pipeline) | Nginx PEP 가 backend 로그를 Filebeat → ES 로 수집·`jwt-decode` 로 11 클레임 분해하고, **v2 이상탐지**(서비스 이벤트 IsolationForest `pipeline/detector/detect.py`, incident 묶기·LLM 보고 `pipeline/detector/anomaly_incident.py`, self-contained 학습 `notebooks/rba_selfcontained_train.ipynb`)를 소유 |
+| [`attack-simulation`](https://github.com/ZETTY-ZEROTRUST/attack-simulation) | 위조·탈취·비정상 수명 JWT를 사용하는 승인된 검증 트래픽 발사 |
+| [`zero-trust-architecture`](https://github.com/ZETTY-ZEROTRUST/zero-trust-architecture) | AWS 인프라 IaC (Terraform) — VPC / SG 체인 / ALB + WAF / Route53 / KMS — backend 가 올라가는 priv-app tier 정의 |
 | [`.github`](https://github.com/ZETTY-ZEROTRUST/.github) | Org Overview README |
 
 ---
@@ -519,7 +518,7 @@ cd /opt/zeti-backend/auth-server && SPRING_PROFILES_ACTIVE=prod ./gradlew bootRu
 | **NIST SP 800-207** | PEP/PDP 분리, micro-segmentation | priv-app/priv-db tier 분리, SG 참조 |
 | **OWASP API1:2023 BOLA** | 객체 소유권 검증 | 자기 자원 API와 repository 소유권 query로 예방 |
 | **OWASP A02: Cryptographic Failures** | 키 관리 | **AWS KMS HSM** + 권한 분리 (Sign/Verify) |
-| **MITRE ATT&CK T1078 (Valid Accounts)** | 탈취 토큰 사용 | attack-simulation S2 시나리오 + UBA `F-TokenHijack` |
+| **MITRE ATT&CK T1078 (Valid Accounts)** | 탈취 토큰 사용 | attack-simulation 탈취 토큰 시나리오 + log-pipeline v2 이상탐지 |
 
 ---
 

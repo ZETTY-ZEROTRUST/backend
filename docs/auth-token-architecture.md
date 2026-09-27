@@ -124,7 +124,7 @@ refresh 보호와 회전의 근거는 [RFC 9700 §4.14](https://www.rfc-editor.o
 
 ## 6. ZETTY 로그·UBA·실험 계약에 미치는 영향
 
-현재 [Nginx uba.conf](../../log-pipeline/nginx-pep/uba.conf)는 `$http_authorization` 원문을 `jwt` 필드에 기록한다. [Filebeat processor](../../log-pipeline/filebeat/filebeat-processors-jwt.yml)는 그 문자열을 분해하고 [UBA log_fetcher](../../uba-analyzer/ingest/log_fetcher.py)는 `jwt.sub/jti/ext.LSID` 등을 읽는다. 설정 확인 결과이며 현재 배포 상태를 의미하지 않는다.
+현재 [Nginx uba.conf](../../log-pipeline/nginx-pep/uba.conf)는 `$http_authorization` 원문을 `jwt` 필드에 기록한다. [Filebeat processor](../../log-pipeline/filebeat/filebeat-processors-jwt.yml)는 그 문자열을 분해하고 [log-pipeline 탐지기](../../log-pipeline/pipeline/detector/detect.py)는 `security-event/2.0`으로 집계된 `sub/jti/ext.LSID` 등의 신호를 읽는다. 설정 확인 결과이며 현재 배포 상태를 의미하지 않는다.
 
 BFF를 넣으면 외부 Nginx에는 세션 쿠키가 오므로 JWT가 없어진다. 또한 API의 연결 IP는 BFF가 된다. **토큰을 안전하게 보관하는 변경이 탐지 입력을 없애거나 모든 사용자를 한 IP로 합칠 수 있다.** 다음 telemetry 전환이 BFF 운영 전 완료 조건이다.
 
@@ -132,12 +132,12 @@ BFF를 넣으면 외부 Nginx에는 세션 쿠키가 오므로 JWT가 없어진�
 2. 로그인·refresh·logout·거부는 Auth/BFF 보안 이벤트로 추가한다. 세션 상관 ID는 인증 쿠키 값과 다른 비밀 아닌 식별자이며 기존 `ext.LSID` 의미와 연결 규칙을 정의한다. 갱신 때 jti는 바꾸고 동일 로그인 세션의 LSID는 유지하는 목표다.
 3. 서명 미검증 claim은 검증된 사용자 정보와 분리한다. 실패 이유만으로 필요한 신호를 남기고 토큰 원문·임의 payload 전체를 보존하지 않는다.
 4. 일반 웹 트래픽은 신뢰하는 ALB/Nginx hop에서 클라이언트 IP를 산출하고 외부에서 주입된 XFF·내부 identity 헤더를 신뢰하지 않는다. BFF는 검증된 전달 메타데이터만 재구성하고 API는 신뢰한 BFF 경로에서만 이를 수용한다.
-5. 현재의 첫 XFF IP 기반 시뮬레이션 계약을 조용히 바꾸지 않는다. 신규 trusted client IP와 기존 실험 IP 의미를 schema version/provenance로 구분하고, ASN 분류·mapping·UBA 입력·scenario fixture를 함께 전환한다.
+5. 현재의 첫 XFF IP 기반 시뮬레이션 계약을 조용히 바꾸지 않는다. 신규 trusted client IP와 기존 실험 IP 의미를 schema version/provenance로 구분하고, ASN 분류·mapping·탐지 입력·scenario fixture를 함께 전환한다.
 6. 기존 필드와 신규 이벤트를 읽는 adapter, strict mapping, 중복 제거용 request/evidence ID와 경로 정규화를 준비한 뒤 raw Authorization 로깅·분해 의존을 제거한다. `Cookie`, `Set-Cookie`, OAuth callback query도 access/error 로그와 APM에서 제외한다.
 
-ML UBA 전환은 사용자가 요청한 후속 목표다. 이 문서에서는 ML 입력이 사용할 신원·시간·행위 데이터 경계만 정한다. 기존 factor 점수를 ML 정답으로 간주하지 않는다. LLM은 설명·grounding을 맡고 UBA에서 자동 차단을 수행하지 않는 경계는 유지한다.
+ML 기반 이상탐지는 log-pipeline v2(비지도 IsolationForest)로 구현되었다. 이 문서에서는 그 입력이 사용할 신원·시간·행위 데이터 경계만 정한다. 라벨은 모델 학습에 쓰지 않고 평가(ground truth)에만 쓴다. LLM은 incident 요약을 맡고, 대응 집행은 `response-command`/I-04(재검증·멱등)로만 하며 UBA가 인라인 자동 차단을 수행하지 않는 경계는 유지한다.
 
-자원 API는 JWT `sub` 기반 자기 자원 경로와 repository-level ownership query를 사용한다. S2/S4/S5/S5b/S6/S8은 path 사용자 ID에 의존하지 않고 탈취·위조 token의 `sub`로 같은 자기 자원 API를 호출한다. 인증 서버의 사용자 로그아웃·프로토콜 재사용 방어는 UBA 자동 차단과 구분한다.
+자원 API는 JWT `sub` 기반 자기 자원 경로와 repository-level ownership query를 사용한다. 탈취·위조 token 시나리오는 path 사용자 ID에 의존하지 않고 token의 `sub`로 같은 자기 자원 API를 호출한다. 인증 서버의 사용자 로그아웃·프로토콜 재사용 방어는 UBA 인라인 자동 차단과 구분한다.
 
 ## 7. 전환 순서와 완료 기준
 
@@ -145,9 +145,9 @@ ML UBA 전환은 사용자가 요청한 후속 목표다. 이 문서에서는 ML
 |---|---|---|
 | 1 | backend | JWT 필수 클레임·scope·소유권·키 신뢰 계약과 401/403/404 테스트 |
 | 2 | backend | Auth 코드·refresh·폐기와 BFF 세션/vault 구현. 저장 암호화·해시 lookup·회전 원자성·동시 요청·응답 유실 테스트 |
-| 3 | log-pipeline → uba-analyzer | 신규 이벤트 mapping → 구·신 consumer 호환 → backend 이벤트 producer 순으로 준비. raw token 제거와 입력 정합성 검증 |
+| 3 | log-pipeline (수집·탐지) | 신규 이벤트 mapping → 구·신 consumer 호환 → backend 이벤트 producer 순으로 준비. raw token 제거와 입력 정합성 검증 |
 | 4 | backend + infrastructure + log-pipeline | 동일 origin 라우팅, 내부 TLS·SG·DB 권한, 다중 BFF 세션 공유, client IP 전달, 키 교체·장애 테스트 |
-| 5 | 웹 클라이언트 + attack-simulation | 로그인 callback·새로고침·로그아웃·CSRF·XSS 잔여 위험·허용 목적지만 프록시됨을 확인. 실험 시나리오/KPI 재정의 |
+| 5 | 웹 클라이언트 + attack-simulation | 로그인 callback·새로고침·로그아웃·CSRF·XSS 잔여 위험·허용 목적지만 프록시됨을 확인. 실험 시나리오/탐지 평가 재정의 |
 
 최소 인수 조건: 브라우저 저장소와 BFF 응답에 OAuth 토큰 없음; DB 원문 토큰 없음; 두 BFF 인스턴스에서 동일 세션 사용; 동시 갱신 1회; 이전 refresh 재사용 거부; 외부 Origin의 상태 변경 거부; 타인 자원 접근 거부(확정된 정상 모드); 로그·ES·LLM에 credential 없음; 여러 브라우저 IP와 검증된 사용자 식별자가 UBA까지 구분됨.
 

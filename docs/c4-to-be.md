@@ -1,36 +1,39 @@
 # ZETTY 전체 시스템 — TO-BE C4 Architecture
 
+> **v2 갱신:** 탐지 축은 이미 전환되었다. v1 `uba-analyzer`(7-factor 스코어링 + LLM ReAct + Elasticsearch 런타임)는 폐기되었고,
+> v2 탐지 본체는 `log-pipeline`이 소유한다 — 서비스 이벤트 비지도 IsolationForest 탐지(`pipeline/detector/detect.py`),
+> incident 묶기·LLM 보고(`pipeline/detector/anomaly_incident.py`), self-contained 학습 노트북(`notebooks/rba_selfcontained_train.ipynb`).
+> 대응 집행은 backend의 I-04 ResponseCommand(내부 수신·재검증·멱등)다. 아래 TO-BE의 7-factor·ReAct·grounding 서술은 v1 기준선이며 탐지 축에서는 위 v2 사실로 대체한다.
+
 > **2026-09-06 설계 갱신:** JWT·인증·인가·토큰 저장·세션·BFF·관련 telemetry는
 > [인증·인가와 토큰 저장 아키텍처](./auth-token-architecture.md)를 우선한다.
 > 아래 C4는 이전 전체 설계 기준선이다. 특히 BFF가 없는 직접 API 경로·배포 그림과
 > 운영/실험 분리 제외는 새 설계의 확정 구조가 아니다. 자원 API의 소유권 검사는 공통 기본 계약이다.
-> 사용자의 ML 기반 UBA 전환 요청으로 아래의 7-factor 고정·학습 금지 역시 향후 목표의
-> 제약으로 적용하지 않는다. ML 상세 설계는 별도 후속 범위이며 현재 구현이 바뀐 것은 아니다.
 
-> 상태: 제안. 아직 모든 저장소에 구현되지 않은 목표 구조<br>
-> 기준: 현재 여섯 저장소의 책임, 의도된 취약점, 탐지·알림 범위, AS-IS 정합성 차이<br>
+> 상태: 제안. 인증·BFF 축은 미구현 목표, 탐지 축은 v2로 구현됨<br>
+> 기준: 네 개 활성 저장소(backend·log-pipeline·attack-simulation·zero-trust-architecture)와 `.github`의 책임, 의도된 취약점, 탐지·대응 범위, AS-IS 정합성 차이<br>
 > 목표: 새로운 플랫폼을 발명하는 것이 아니라 현재 PoC를 **재현 가능하고 계약이 명확한 하나의 시스템**으로 만든다.
 
 ## 1. 목표와 변경하지 않는 경계
 
-TO-BE는 `backend`만 강화하는 설계가 아니다. `attack-simulation → Edge/PEP → backend → log-pipeline → Elasticsearch → UBA → LLM/grounding → Slack/Kibana` 전체 경로를 하나의 검증 가능한 아키텍처로 정리한다.
+TO-BE는 `backend`만 강화하는 설계가 아니다. `attack-simulation → Edge/PEP → backend → log-pipeline(Elasticsearch → IsolationForest 탐지 → incident 묶기·LLM 보고 → Slack) → backend I-04 대응` 전체 경로를 하나의 검증 가능한 아키텍처로 정리한다.
 
 ### Architecture Drivers
 
 | Driver | 목표 상태 |
 |---|---|
-| 전체 시스템 경계 | 여섯 저장소의 producer·consumer·배포 순서가 하나의 C4와 계약 표에서 추적된다 |
+| 전체 시스템 경계 | 네 개 활성 저장소와 `.github`의 producer·consumer·배포 순서가 하나의 C4와 계약 표에서 추적된다 |
 | 재현 가능성 | Terraform, runtime config, mapping, cron, 시나리오가 같은 환경 가정을 공유한다 |
 | 키 최소 권한 | Auth만 `kms:Sign`, API는 실제 필요한 공개키 조회만 허용하며 키 회전 계약이 있다 |
-| 관측 일관성 | Nginx log path부터 Filebeat processor, ES ingest·mapping, UBA field까지 한 schema로 고정된다 |
-| 결정론 보존 | 점수·factor·attacker level은 Python 계층만 소유하고 LLM은 grounding된 설명만 추가한다 |
-| 검증 가능성 | 각 시나리오의 입력, 기대 factor, 실제 risk doc, alert, KPI를 한 evidence chain으로 연결한다 |
+| 관측 일관성 | Nginx log path부터 Filebeat processor, ES ingest·mapping, 탐지 입력 피처까지 한 schema로 고정된다 |
+| 결정론 보존 | 이상 점수·임계·evidence는 Python 탐지 계층만 소유하고 LLM은 요약만 쓰며 판정을 바꾸지 않는다 |
+| 검증 가능성 | 각 시나리오의 입력, 기대 신호(평가 라벨), 실제 이상탐지 레코드·incident를 한 evidence chain으로 연결한다 |
 | 안전성 | 공격은 승인된 테스트 경계에서만 실행하고 secret·key·PII 산출물을 Git에 남기지 않는다 |
 
 ### 변경하지 않는 것
 
-- PoC의 종료점은 탐지·알림이다. UBA에서 Nginx나 Backend로 돌아가는 자동 차단 경로를 만들지 않는다.
-- 학습·파인튜닝을 추가하지 않는다. LLM은 추론과 컨텍스트 보강만 한다.
+- PoC에 인라인 자동 차단 종료점은 없다. 탐지 결과는 backend I-04 ResponseCommand로 전달되어 내부 수신·재검증·멱등으로 집행되며(기본 DRY_RUN), UBA가 Nginx로 되돌아가 요청을 인라인 자동 차단하지는 않는다.
+- LLM 파인튜닝을 추가하지 않는다. 이상탐지 모델(IsolationForest)은 라벨 없이 학습하고 라벨은 평가에만 쓰며, LLM은 incident 요약만 담당한다.
 - ES256, AWS KMS, Java 17, Spring Boot, Gradle, Nimbus JOSE 경계를 유지한다.
 - 순차 `sub`, 민감 응답 fixture, MOCK OTP와 문서화된 키 유출 재현 자산은 별도 요청 없이는 범위를 넓히거나 축소하지 않는다. 자원 소유권 검사는 모든 profile에서 유지한다.
 - Kafka, 별도 PDP, MFA SaaS, 마이크로서비스 분해, Identity/Resource DB 분리는 현재 검증 목표에 필요하지 않으므로 전제하지 않는다.
@@ -41,30 +44,28 @@ TO-BE는 `backend`만 강화하는 설계가 아니다. `attack-simulation → E
 ```mermaid
 flowchart LR
     operator["<<person>><br/><b>시연 운영자</b><br/>승인된 검증 profile과 시나리오를 실행하고 evidence를 수집한다"]
-    analyst["<<person>><br/><b>SOC 분석가</b><br/>결정론적 점수·원본 증거·grounding된 설명을 조사한다"]
+    analyst["<<person>><br/><b>SOC 분석가</b><br/>결정론적 이상탐지 증거·incident 보고를 조사한다"]
     user["<<person>><br/><b>테스트 사용자</b><br/>인증과 업무 API의 정상 행위를 만든다"]
 
-    ztty["<<software_system>><br/><b>ZETTY Zero Trust + UBA SOC</b><br/>키 사용 분리 + 전 경로 telemetry + 7-factor 탐지 + 설명·알림을 재현한다"]
+    ztty["<<software_system>><br/><b>ZETTY Zero Trust + UBA SOC</b><br/>키 사용 분리 + 전 경로 telemetry + IsolationForest 이상탐지 + incident 보고·I-04 대응을 재현한다"]
 
     kms["<<external_system>><br/><b>AWS KMS</b><br/>서명키를 비수출 상태로 사용·감사한다"]
-    anthropic["<<external_system>><br/><b>Anthropic API</b><br/>탐지 결과에 위협 컨텍스트를 보강한다"]
-    knowledge["<<external_system>><br/><b>MITRE ATT&CK / NVD</b><br/>도구 조회와 grounding의 지식 원천이다"]
-    slack["<<external_system>><br/><b>Slack</b><br/>grounding 완료 알림을 받는다"]
+    anthropic["<<external_system>><br/><b>Anthropic API</b><br/>탐지 결과 incident 요약을 생성한다"]
+    slack["<<external_system>><br/><b>Slack</b><br/>incident 보고를 받는다"]
 
     user -->|정상 인증·업무 요청| ztty
     operator -->|승인된 공격·검증 실행| ztty
     analyst -->|Kibana 조사·Slack 수신| ztty
     ztty -->|Sign / GetPublicKey / storage encryption| kms
-    ztty -->|위협 설명 요청| anthropic
-    ztty -->|식별자 조회·검증| knowledge
-    ztty -->|탐지·캠페인 알림| slack
+    ztty -->|요약 생성 요청| anthropic
+    ztty -->|incident 보고| slack
 
     classDef person fill:#08427b,color:#fff,stroke:#052e56
     classDef system fill:#1168bd,color:#fff,stroke:#0b4884
     classDef external fill:#999,color:#fff,stroke:#666
     class operator,analyst,user person
     class ztty system
-    class kms,anthropic,knowledge,slack external
+    class kms,anthropic,slack external
 ```
 
 Context의 외부 관계는 AS-IS와 크게 다르지 않다. TO-BE의 핵심은 새 시스템 추가가 아니라 ZETTY 내부 계약과 검증의 폐쇄형 evidence chain을 완성하는 데 있다.
@@ -84,17 +85,16 @@ flowchart LR
         pep["<<container>><br/><b>Nginx PEP</b><br/>[log-pipeline]<br/>라우팅·canonical access event"]
         collector["<<container>><br/><b>Telemetry Collector</b><br/>[Filebeat]<br/>한 runtime config·JWT normalization"]
         auth["<<container>><br/><b>Auth Server</b><br/>[backend / Spring Boot]<br/>Identity·KMS signing·JWT 발급"]
-        api["<<container>><br/><b>API Server</b><br/>[backend / Spring Boot]<br/>JWT 검증·업무 API·실험 계약"]
+        api["<<container>><br/><b>API Server</b><br/>[backend / Spring Boot]<br/>JWT 검증·업무 API·실험 계약·I-04 ResponseCommand"]
         db[("<<container_db>><br/><b>RDS MySQL</b><br/>[shared PoC schema]")]
-        evidence[("<<container_db>><br/><b>Elastic Evidence Store</b><br/>[Elasticsearch]<br/>versioned raw·event·risk·alert schema")]
-        detect["<<container>><br/><b>Deterministic Detection Engine</b><br/>[uba-analyzer / Python]<br/>aggregate·baseline·7-factor·profile"]
-        enrich["<<container>><br/><b>LLM Enrichment & Grounding</b><br/>[uba-analyzer / Python]<br/>trigger·ReAct·MCP·grounding"]
-        portal["<<container>><br/><b>SOC Views</b><br/>[Kibana assets]<br/>raw → risk → alert evidence drill-down"]
+        evidence[("<<container_db>><br/><b>Elastic Evidence Store</b><br/>[Elasticsearch]<br/>versioned raw·event·anomaly·incident schema")]
+        detect["<<container>><br/><b>Anomaly Detection Engine</b><br/>[log-pipeline / Python]<br/>security-event 집계·비지도 IsolationForest·평가"]
+        enrich["<<container>><br/><b>Incident Report</b><br/>[log-pipeline / Python]<br/>incident 묶기·결정론 보고 필드·LLM 요약"]
+        portal["<<container>><br/><b>SOC Views</b><br/>[Kibana assets]<br/>raw → anomaly → incident evidence drill-down"]
     end
 
     kms["<<external_system>><br/><b>AWS KMS</b>"]
     anthropic["<<external_system>><br/><b>Anthropic API</b>"]
-    knowledge["<<external_system>><br/><b>MITRE ATT&CK / NVD</b>"]
     slack["<<external_system>><br/><b>Slack</b>"]
 
     user -->|HTTPS| edge
@@ -110,14 +110,14 @@ flowchart LR
     pep -->|canonical JSON event| collector
     collector -->|TLS :9200 + versioned pipeline| evidence
     detect -->|raw query| evidence
-    detect -->|events·baseline·risk·profiles| evidence
-    detect -->|threshold candidate| enrich
-    enrich -->|evidence query + grounded output| evidence
-    enrich -->|Messages API| anthropic
-    enrich -->|MCP lookup + validation| knowledge
-    enrich -->|validated alerts only| slack
+    detect -->|anomaly-detection/1.0 레코드·평가 요약| evidence
+    detect -.->|response-command/1.0 DRY_RUN| api
+    detect -->|is_anomaly 레코드| enrich
+    enrich -->|incident·evidence 조회/저장| evidence
+    enrich -->|요약 생성 Messages API| anthropic
+    enrich -->|incident Slack 보고| slack
     analyst -->|investigate| portal
-    portal -->|raw/risk/alert query| evidence
+    portal -->|raw/anomaly/incident query| evidence
 
     classDef person fill:#08427b,color:#fff,stroke:#052e56
     classDef container fill:#438dd5,color:#fff,stroke:#2e6295
@@ -126,10 +126,10 @@ flowchart LR
     class user,operator,analyst person
     class harness,edge,pep,collector,auth,api,detect,enrich,portal container
     class db,evidence database
-    class kms,anthropic,knowledge,slack external
+    class kms,anthropic,slack external
 ```
 
-다이어그램에 `enrich → pep/api` 화살표가 없는 것이 중요하다. 분석 결과는 사람에게 전달되며 정책 집행을 자동 변경하지 않는다.
+`enrich → pep/api` 자동 정책 변경 화살표가 없다는 점이 중요하다. 요약은 사람에게 전달되고, 대응은 `response-command/1.0`(DRY_RUN 기본)으로만 backend I-04 ResponseCommand에 전달된다. Incident Report가 Nginx/API 정책을 직접 자동 변경하지 않는다.
 
 ### AS-IS에서 달라지는 Container 계약
 
@@ -152,24 +152,21 @@ flowchart LR
     contract[".github<br/><b>System Contract Index</b><br/>소유 문서 링크·호환 규칙·배포 순서"]
     infra["zero-trust-architecture<br/><b>Deployment Contract</b><br/>network·IAM·KMS·runtime placement"]
     backend["backend<br/><b>JWT / HTTP Producer</b><br/>token·path·response"]
-    log["log-pipeline<br/><b>Telemetry Producer</b><br/>log·normalized fields·mapping"]
-    uba["uba-analyzer<br/><b>Detection Producer</b><br/>factor·score·alert schema"]
+    log["log-pipeline<br/><b>Telemetry + Detection Producer</b><br/>log·normalized fields·mapping·anomaly·incident schema"]
     attack["attack-simulation<br/><b>Validation Producer</b><br/>scenario manifest·expected signals"]
-    kpi["uba-analyzer/docs/kpi<br/><b>Measured Evidence</b>"]
+    kpi["log-pipeline 탐지 평가<br/><b>Measured Evidence</b>"]
 
     contract -.-> infra
     contract -.-> backend
     contract -.-> log
-    contract -.-> uba
     contract -.-> attack
     infra -->|runtime identity·ports| backend
     infra -->|runtime identity·ports| log
-    infra -->|runtime identity·ports| uba
-    backend -->|JWT·HTTP| log
-    log -->|normalized telemetry| uba
+    backend -->|JWT·HTTP·security-event| log
+    log -->|response-command / I-04| backend
     attack -->|scenario traffic + id| backend
-    attack -->|expected factor| uba
-    uba -->|actual risk/alert| kpi
+    attack -->|expected signal (평가 라벨)| log
+    log -->|actual anomaly/incident| kpi
     attack -->|ground truth| kpi
 ```
 
@@ -179,12 +176,13 @@ flowchart LR
 
 | 계약 | Target owner | 반드시 함께 검증할 Consumer |
 |---|---|---|
-| JWT header·claim·TTL·issuer·audience | `backend/auth-server` | API verifier, Filebeat fields, UBA token rules·prompt, attack token forge |
-| API path·status·response | `backend/api-server` | Nginx routing/log, attack scenarios, UBA sensitivity rule |
-| Access log·client IP·ASN | `log-pipeline/nginx-pep` + `filebeat` + `es-pipelines` | ES mapping, UBA aggregate·factor·prompt·KPI |
-| UBA factor key·score·threshold·level | `uba-analyzer/scoring` | ES mapping, adapter·prompt·grounding, Slack/Kibana, scenario·KPI docs |
-| AWS CIDR·port·IAM·KMS alias | `zero-trust-architecture/terraform` | backend/log/UBA runtime config, deploy·demo scripts, architecture docs |
-| Scenario ID·행위·기대값 | `attack-simulation/SCENARIOS.md` | UBA factor fixture와 KPI ground truth |
+| JWT header·claim·TTL·issuer·audience | `backend/auth-server` | API verifier, Filebeat fields, 탐지 입력 피처, attack token forge |
+| API path·status·response | `backend/api-server` | Nginx routing/log, attack scenarios, 탐지 민감 경로 규칙 |
+| Access log·client IP·ASN | `log-pipeline/nginx-pep` + `filebeat` + `es-pipelines` | ES mapping, 탐지 집계·피처·평가 |
+| 이상탐지 피처·score·threshold | `log-pipeline/pipeline/detector/detect.py` | ES mapping, 학습 노트북, incident 보고, Slack/Kibana, scenario·평가 문서 |
+| Response command | `log-pipeline detector` → `backend/api-server` I-04 | `response-command/1.0` 재검증·멱등 집행 |
+| AWS CIDR·port·IAM·KMS alias | `zero-trust-architecture/terraform` | backend/log-pipeline runtime config, deploy·demo scripts, architecture docs |
+| Scenario ID·행위·기대값 | `attack-simulation` 시나리오 문서 | 탐지 평가 fixture와 ground truth |
 
 ## 5. Level 3 — Target Components
 
@@ -237,55 +235,52 @@ flowchart LR
     event["Canonical Access Event<br/>schema_version + evidence_id"]
     normalize["JWT / client_ip / ASN Normalization"]
     raw[("filebeat-*")]
-    aggregate["User·IP·ASN Window Aggregate"]
-    baseline["Baseline / Cold-start Guard"]
-    factor["7-Factor Engine"]
-    level["Risk Scorer + Attacker Level"]
-    risk[("risk-scores / profiles")]
-    gate["Trigger Gate<br/>floor·throttle·cost"]
-    react["LLM ReAct + MCP"]
-    grounding["Grounding Validation"]
-    alert[("alerts / intelligence")]
+    aggregate["subject_key Window Aggregate<br/>security-event/2.0"]
+    features["Feature Vector<br/>request_count·rate·distinct_routes·sessions·burst"]
+    forest["IsolationForest Detector<br/>비지도 · 시간분할 학습 · 임계 재보정"]
+    anomaly[("anomaly-detection/1.0<br/>결정적 detection_id · 평가 요약")]
+    cmd["response-command/1.0<br/>DRY_RUN 정책 산출물"]
+    incident["Incident Grouper + Report Builder<br/>결정론 필드·새니타이즈"]
+    summary["LLM Summary<br/>폴백 포함"]
     soc["Slack / Kibana"]
+    api["backend I-04 ResponseCommand"]
+    labels["평가 라벨(ground truth)<br/>학습 미사용·평가 전용"]
 
     request --> event --> normalize --> raw
-    raw --> aggregate
-    aggregate --> baseline --> factor --> level --> risk
-    risk --> gate --> react --> grounding --> alert --> soc
-    raw -.->|evidence lookup| react
-    baseline -.->|context only| react
-    factor -.->|factor truth| grounding
-    level -.->|score·level truth| grounding
+    raw --> aggregate --> features --> forest --> anomaly
+    forest --> cmd -.->|재검증·멱등 집행| api
+    anomaly --> incident --> summary --> soc
+    labels -.->|evaluate only| forest
 ```
 
 Target invariants:
 
-- `schema_version`, `scenario_id` 또는 동등한 `evidence_id`는 raw부터 KPI까지 보존한다.
+- `schema_version`, `scenario_id` 또는 동등한 `evidence_id`·`detection_id`는 raw부터 평가까지 보존한다.
 - strict/dynamic mapping 정책은 index별 실제 JSON으로 결정하고 모든 index에 일괄 적용하지 않는다.
-- LLM 출력은 `factor_breakdown`, `dominant_factor`, `attacker_level`을 쓸 수 없거나, 써도 결정론적 값으로 덮어쓴 뒤 저장한다.
-- Grounding 실패는 검증되지 않은 식별자 제거 또는 알림 보류로 귀결되며 원본 점수는 잃지 않는다.
-- Slack 실패가 risk/alert evidence 자체를 소실시키지 않는다.
+- 이상 점수·임계·evidence는 탐지 계층이 소유한다. LLM은 요약만 쓰고 판정을 바꾸지 못하며, `anomaly_score`는 공격 확률이 아니다.
+- LLM이 없거나 실패해도 결정론 폴백으로 보고가 나가고, 원문 토큰·개인정보는 입력 새니타이즈로 차단한다.
+- Slack 실패가 anomaly/incident evidence 자체를 소실시키지 않는다.
 
 ### Attack Validation — 시나리오와 KPI
 
 ```mermaid
 flowchart LR
-    manifest["Scenario Manifest<br/>S2/S4/S5/S5b/S6/S8"]
+    manifest["Scenario Manifest<br/>승인된 검증 시나리오"]
     safety["Safety Gate<br/>approved base URL·account·profile"]
     runner["Scenario Runner"]
     result["Local Result Metadata<br/>secret·PII 제외"]
     raw[("Raw Telemetry")]
-    risk[("Deterministic Risk")]
-    alert[("Grounded Alert")]
-    evaluator["KPI Evaluator<br/>MTTD·TPR·FPR"]
+    anomaly[("anomaly-detection/1.0")]
+    incident[("Incident 보고")]
+    evaluator["Detection Evaluator<br/>시간분할 지표"]
 
     manifest --> safety --> runner
     runner --> result
-    runner --> raw --> risk --> alert
-    manifest -->|expected factor/window| evaluator
+    runner --> raw --> anomaly --> incident
+    manifest -->|expected signal/window (평가 라벨)| evaluator
     result -->|start/end/evidence id| evaluator
-    risk --> evaluator
-    alert --> evaluator
+    anomaly --> evaluator
+    incident --> evaluator
 ```
 
 실제 공격 발사와 SSM trigger는 정적 검증과 분리한다. CI에서는 compile/import/fixture 계약만 확인하고, live scenario는 승인된 대상과 계정을 확인한 뒤 별도 실행한다.
@@ -297,7 +292,7 @@ TO-BE도 현재 PoC의 단일 VPC·5 tier 배치를 유지한다. 목표는 무�
 ```mermaid
 flowchart TB
     operator["Approved operator network"]
-    external["Anthropic / Slack / knowledge APIs"]
+    external["Anthropic / Slack"]
 
     subgraph account["Dedicated ZETTY test account / region"]
         iac["Terraform state + import manifest<br/>protected, not committed"]
@@ -315,7 +310,7 @@ flowchart TB
         end
         subgraph monitor["priv-monitor 2a<br/>accepted PoC SPOF"]
             es["Elasticsearch + Kibana"]
-            uba["UBA + LLM runtime"]
+            uba["Detection + LLM report runtime<br/>log-pipeline detector"]
         end
         secret["Workload-scoped secret/config boundary"]
         kms["KMS<br/>Auth Sign / API PublicKey"]
@@ -364,19 +359,19 @@ flowchart TB
 | 단계 | 대상 저장소 | 변경 | 완료 조건 |
 |---|---|---|---|
 | 0. 기준선 고정 | `.github`, 전체 | 전체 C4와 계약 owner·consumer·배포 순서를 합의 | 현재와 목표가 분리되고 각 계약의 진실 원천이 하나다 |
-| 1. 문서·설정 정합화 | `log-pipeline`, `uba-analyzer`, `attack-simulation`, `.github` | 9200/5044, JWT decode owner, log path, cron 주기, ZETI/ZETTY 논리명 정리 | README·config·shell·다이어그램이 같은 실행 흐름을 설명한다 |
+| 1. 문서·설정 정합화 | `log-pipeline`, `attack-simulation`, `.github` | 9200/5044, JWT decode owner, log path, 탐지 실행 주기, ZETI/ZETTY 논리명 정리 | README·config·shell·다이어그램이 같은 실행 흐름을 설명한다 |
 | 2. IaC 재현성 | `zero-trust-architecture` | ALB/Route53 의존 해소, import 순서, least privilege, secret boundary | `fmt -check`; 준비된 환경에서 `validate`와 non-mutating `plan` 가능 |
 | 3. JWT trust contract | `backend`, `zero-trust-architecture`, 후속 consumer | claim contract test, multi-`kid` refresh, IAM 최소화 | 신규·이전 키 호환 테스트와 잘못된 alg/kid/claim 테스트가 있다 |
-| 4. Telemetry schema | `log-pipeline` → `uba-analyzer` | canonical Filebeat, schema version, fixture, mapping 호환 | 샘플 Nginx event가 expected ES document로 변환되고 UBA dry-run이 읽는다 |
-| 5. Detection evidence | `uba-analyzer` | factor truth guard, scheduler source, idempotency·failure evidence | 동일 fixture가 동일 score/level을 만들고 LLM 실패에도 risk doc이 남는다 |
-| 6. Scenario/KPI 폐루프 | `attack-simulation` → `uba-analyzer/docs/kpi` | scenario manifest와 evidence id, 기대값·실측 연결 | 6개 시나리오별 raw/risk/alert/KPI 상태가 성공·실패·미측정으로 구분된다 |
+| 4. Telemetry schema | `log-pipeline` (수집 → 탐지) | canonical Filebeat, schema version, fixture, mapping 호환 | 샘플 Nginx event가 expected ES document로 변환되고 탐지 dry-run이 읽는다 |
+| 5. Detection evidence | `log-pipeline/pipeline/detector` | 결정적 detection_id·input_hash, 임계 재보정, 시간분할 평가, idempotency·failure evidence | 동일 fixture가 동일 이상탐지 레코드를 만들고 LLM 실패에도 결정론 보고가 남는다 |
+| 6. Scenario/평가 폐루프 | `attack-simulation` → `log-pipeline` 탐지 평가 | scenario manifest와 evidence id, 기대 신호·실측 연결 | 시나리오별 raw/anomaly/incident/평가 상태가 성공·실패·미측정으로 구분된다 |
 
 ### 계약 변경의 안전한 병합·배포 순서
 
 1. 새 필드를 허용하는 Elasticsearch mapping/template을 먼저 배포한다.
-2. UBA consumer가 기존 필드와 새 필드를 모두 읽도록 호환 배포한다.
+2. 탐지 consumer(`detect.py`·`anomaly_incident.py`)가 기존 필드와 새 필드를 모두 읽도록 호환 배포한다.
 3. Filebeat/Nginx producer가 새 schema를 쓰도록 전환한다.
-4. Kibana·prompt·Slack adapter와 KPI fixture를 갱신한다.
+4. Kibana·Slack 보고 adapter와 평가 fixture를 갱신한다.
 5. 마지막에 attack scenario를 실행해 end-to-end evidence를 측정한다.
 
 JWT key 회전은 API가 신규·이전 `kid`를 모두 검증할 수 있게 한 뒤 Auth의 signing key를 바꾸고, 기존 토큰 최대 TTL이 지난 후 이전 키를 제거한다.
@@ -388,8 +383,7 @@ JWT key 회전은 API가 신규·이전 `kid`를 모두 검증할 수 있게 한
 | `.github` | 전체 목적, 저장소 수, runtime flow, 계약 owner 링크가 실제 구현과 일치한다 |
 | `zero-trust-architecture` | import 전제를 포함해 Terraform graph·SG·IAM·KMS·EC2 placement가 검증 가능하다 |
 | `backend` | DDD 의존 방향, JWT 발급/검증 contract test, KMS 최소 권한·키 refresh 동작이 문서와 일치한다 |
-| `log-pipeline` | `uba.log → canonical Filebeat → :9200 → versioned ingest/mapping` fixture가 재현된다 |
-| `uba-analyzer` | 7-factor truth, index writer, trigger, grounding, Slack/Kibana 출력의 실패 경계가 테스트된다 |
+| `log-pipeline` | `uba.log → canonical Filebeat → :9200 → versioned ingest/mapping` fixture가 재현되고, `detect.py`가 결정적 이상탐지 레코드·평가 요약을, `anomaly_incident.py`가 결정론 incident 보고(LLM 요약·폴백 포함)를 만든다 |
 | `attack-simulation` | 승인 대상 safety gate와 scenario manifest가 있고 결과 파일에 secret·PII가 남지 않는다 |
 
 ## 9. ADR로 남길 결정
@@ -398,12 +392,12 @@ C4는 구조를 보여주고 ADR은 “왜 그 선택을 했는가”를 고정�
 
 | ADR 후보 | 결정 질문 |
 |---|---|
-| 전체 시스템 경계 | 왜 여섯 저장소를 하나의 ZETTY Software System으로 보는가? |
-| Detection-only 종료점 | 왜 UBA 점수를 자동 차단·격리에 연결하지 않는가? |
+| 전체 시스템 경계 | 왜 네 개 활성 저장소와 `.github`를 하나의 ZETTY Software System으로 보는가? |
+| 대응 집행 경계 | 왜 탐지는 인라인 자동 차단이 아니라 `response-command`/I-04(재검증·멱등)로만 대응을 집행하는가? |
 | JWT key distribution | KMS `GetPublicKey` direct 방식에서 multi-`kid`·refresh·회전을 어떻게 보장하는가? |
 | Telemetry normalization owner | JWT decode와 client IP/ASN 계산을 Filebeat와 ES ingest 중 어디가 소유하는가? |
 | Elasticsearch schema ownership | mapping 변경의 producer-first/consumer-first 호환 규칙과 보존 기간은 무엇인가? |
-| Scheduler contract | Phase 1/2/3a/3b의 실제 주기와 MTTD·비용 계산 기준은 무엇인가? |
+| Scheduler contract | 탐지 배치 실행 주기와 MTTD·비용 계산 기준은 무엇인가? |
 | Monitor availability | 단일 ELK·UBA 노드를 PoC 제약으로 수용할지, 언제 HA로 전환할지? |
 
 ## 10. 의도적으로 제외한 것
@@ -411,7 +405,7 @@ C4는 구조를 보여주고 ADR은 “왜 그 선택을 했는가”를 고정�
 - 클래스·메서드·테이블 컬럼 전체를 펼친 Code diagram
 - 운영 사용자용 production architecture와 취약한 demo architecture의 이중 구축
 - Kafka·서비스 메시·별도 PDP·실시간 stream processing 같은 미검증 확장
-- LLM 기반 점수 계산, 자동 차단, 자동 격리, 학습·파인튜닝
+- LLM 기반 점수 계산, 인라인 자동 차단, 자동 격리, LLM 파인튜닝
 - 실제 AWS·ES·Slack 변경이나 공격 시나리오 실행
 
 현재 구조와 확인된 정합성 차이는 [AS-IS C4 Architecture](./C4-as-is.md)에서 확인한다.
