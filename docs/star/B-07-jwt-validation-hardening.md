@@ -1,6 +1,6 @@
 # B-07 v2:start — JWT 검증 강화(필수 claim·발급자·대상·토큰 종류·시각)
 
-- 상태: 계획
+- 상태: 완료
 - 연결: 로드맵 B0 → v2:start(SCENARIOS) · attack-simulation `scenarios/v2/start_jwt.py`(작성 예정)
 - 작성/갱신: 2026-09-27
 
@@ -45,4 +45,21 @@
 
 ## R — 결과
 
-미측정.
+단위 테스트(api 48건 통과) + 실제 스택 재공격(`attack-simulation/scenarios/v2/start_jwt.py`, auth-lab이 실제 서명키로 위조):
+
+| 토큰 | 결과 |
+|---|---|
+| 정상 AT | 200 |
+| alg=none / 깨진 문자열 / 빈 값 | 401 |
+| 서명 유효·정상 claim이나 대장 미기록 | 401 (S3 발급대장) |
+| 잘못된 iss / aud / typ | 401 (검증기) |
+| exp 없음 | 401 (검증기) — 설정 실수로 발급돼도 차단 |
+| 미래 발급(iat) / 최대 수명(900초) 초과 | 401 (검증기) |
+| sub 없음 | 401 (검증기) |
+
+전부 차단(9/9 + 기본 3종). 발급대장(S3)과 검증기가 겹친 이중 방어이며, 검증기 단독으로도 조건 위반 토큰을 막는다.
+
+### 시행착오
+- 강화 규칙 추가로 기존 통합/단위 테스트 토큰(옛 claim 구성)이 401이 됐다 → 테스트 토큰을 정상 AT claim(iss·aud·iat·nbf·typ)으로 갱신. "설정/토큰이 조건을 안 갖추면 거부"가 실제로 동작함을 역으로 확인.
+- `@RequiredArgsConstructor`(Lombok)와 명시 생성자 충돌 → Lombok 제거.
+- auth-lab이 새 EVENT_HMAC_KEY 요구로 기동 실패 → lab 서비스에도 키 주입.
