@@ -5,6 +5,7 @@ import com.zeti.api.address.application.dto.AddressUpdateRequest;
 import com.zeti.api.address.domain.Address;
 import com.zeti.api.address.infrastructure.persistence.AddressRepository;
 import java.util.List;
+import com.zeti.api.mypage.application.MyPageCache;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class AddressService {
 
     private final AddressRepository addressRepository;
+    private final MyPageCache myPageCache;
 
     public List<AddressResponse> listByUserId(Long userId) {
         return addressRepository.findByUserIdOrderByIsDefaultDescAddressIdAsc(userId).stream()
@@ -37,6 +39,7 @@ public class AddressService {
                 request.doorPassword(),
                 request.deliveryNote(),
                 request.isDefault());
+        myPageCache.evictAfterCommit(userId);
         return AddressResponse.from(address);
     }
 }

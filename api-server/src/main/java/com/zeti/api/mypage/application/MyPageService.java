@@ -24,8 +24,22 @@ public class MyPageService {
     private final AddressService addressService;
     private final OrderService orderService;
     private final PaymentService paymentService;
+    private final MyPageCache myPageCache;
 
     public MyPageResponse getMyPage(Long userId) {
+        if (myPageCache.isEnabled()) {
+            var cached = myPageCache.get(userId);
+            if (cached.isPresent()) {
+                return cached.get();
+            }
+            MyPageResponse loaded = load(userId);
+            myPageCache.put(userId, loaded);
+            return loaded;
+        }
+        return load(userId);
+    }
+
+    private MyPageResponse load(Long userId) {
         UserResponse user = userService.getById(userId);
 
         List<AddressResponse> addresses = addressService.listByUserId(userId);

@@ -18,7 +18,8 @@ class AddressServiceTest {
     @Test
     void updateLooksUpAddressWithinAuthenticatedOwner() {
         AddressRepository repository = mock(AddressRepository.class);
-        AddressService service = new AddressService(repository);
+        AddressService service = new AddressService(repository,
+                mock(com.zeti.api.mypage.application.MyPageCache.class));
         AddressUpdateRequest request = new AddressUpdateRequest(
                 "수령인", "010-0000-0000", "12345", "주소", null, null, null, true);
 
