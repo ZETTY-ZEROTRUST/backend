@@ -56,4 +56,4 @@
 |---|---|---|
 | [B-01](B-01-local-runtime.md) | AWS 없는 로컬 런타임: Java 21·RS256·로컬 KMS·JWKS | 계획 |
 | [B-02](B-02-mypage-order-pagination.md) | 마이페이지·주문목록 전량조회 → 인덱스+페이지네이션 (L-2) | 완료 |
-| [B-05](B-05-swagger.md) | Swagger UI(로컬 전용, Bearer JWT) | 완료 |
+| [B-04](B-04-bff-step1.md) | BFF 1단계: 브라우저에서 AT·RT 제거(세션 쿠키·암호화 vault·제한 proxy) | 계획 |
