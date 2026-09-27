@@ -9,7 +9,7 @@ version = "0.0.1-SNAPSHOT"
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(17)
+		languageVersion = JavaLanguageVersion.of(21)
 	}
 }
 
@@ -33,8 +33,12 @@ dependencies {
 	// Password Encoder
 	implementation("org.springframework.security:spring-security-crypto")
 	// AWS KMS
-	implementation(platform("software.amazon.awssdk:bom:2.25.0"))
+	implementation(platform("software.amazon.awssdk:bom:2.28.16"))
 	implementation("software.amazon.awssdk:kms")
+	implementation("com.nimbusds:nimbus-jose-jwt:9.40")
+	implementation("org.springframework.boot:spring-boot-starter-actuator")
+	runtimeOnly("io.micrometer:micrometer-registry-prometheus")
+	testRuntimeOnly("com.h2database:h2")
 }
 
 tasks.withType<Test> {

@@ -3,10 +3,10 @@ package com.zeti.api.security.application;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSVerifier;
-import com.nimbusds.jose.crypto.ECDSAVerifier;
+import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import com.zeti.api.security.infrastructure.kms.KmsPublicKeyProvider;
+import com.zeti.api.security.infrastructure.jwks.JwksPublicKeyProvider;
 import java.text.ParseException;
 import java.util.Date;
 import lombok.RequiredArgsConstructor;
@@ -18,14 +18,14 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class JwtVerifier {
 
-    private final KmsPublicKeyProvider publicKeyProvider;
+    private final JwksPublicKeyProvider publicKeyProvider;
 
     public JWTClaimsSet verify(String token) {
         try {
             SignedJWT signedJwt = SignedJWT.parse(token);
 
-            // 1. 알고리즘 검증 (ES256만 허용)
-            if (!JWSAlgorithm.ES256.equals(signedJwt.getHeader().getAlgorithm())) {
+            // 1. 알고리즘 검증 (RS256만 허용)
+            if (!JWSAlgorithm.RS256.equals(signedJwt.getHeader().getAlgorithm())) {
                 throw new IllegalArgumentException(
                         "지원하지 않는 알고리즘: " + signedJwt.getHeader().getAlgorithm());
             }
@@ -36,8 +36,8 @@ public class JwtVerifier {
                 throw new IllegalArgumentException("JWT 헤더에 kid 없음");
             }
 
-            // 3. ECDSA 서명 검증
-            JWSVerifier verifier = new ECDSAVerifier(publicKeyProvider.getPublicKey(kid));
+            // 3. RSA 서명 검증
+            JWSVerifier verifier = new RSASSAVerifier(publicKeyProvider.getPublicKey(kid));
             if (!signedJwt.verify(verifier)) {
                 throw new IllegalArgumentException("JWT 서명 검증 실패");
             }

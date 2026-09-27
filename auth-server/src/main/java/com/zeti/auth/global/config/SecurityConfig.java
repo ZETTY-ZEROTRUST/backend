@@ -21,7 +21,9 @@ public class SecurityConfig {
                                 "/hello",
                                 "/auth/signup",
                                 "/auth/login",
-                                "/error"
+                                "/.well-known/jwks.json",
+                                "/error",
+                                "/actuator/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 );
