@@ -1,5 +1,6 @@
 package com.zeti.api.user.domain;
 
+import org.hibernate.annotations.DynamicUpdate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -13,6 +14,8 @@ import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "users")
+// 바뀐 컬럼만 UPDATE한다. API 계정은 users의 name·phone만 UPDATE 권한을 가진다(비밀번호·authVersion 보호).
+@DynamicUpdate
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class User {
