@@ -32,6 +32,10 @@ public class User {
     @Column(name = "auth_version", nullable = false)
     private int authVersion;
 
+    /** 대응 명령 LOCK_ACCOUNT로 세운다. 잠긴 계정은 로그인을 거부한다. */
+    @Column(name = "locked", nullable = false)
+    private boolean locked;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -48,5 +52,15 @@ public class User {
     /** 전체 로그아웃·권한 회수 시 증가. 기존 AT는 다음 검증에서 거부된다. */
     public void bumpAuthVersion() {
         this.authVersion += 1;
+    }
+
+    /** LOCK_ACCOUNT 집행. 로그인 거부 상태로 만든다. */
+    public void lock() {
+        this.locked = true;
+    }
+
+    /** 잠금 해제(명시적 해제 명령·운영). */
+    public void unlock() {
+        this.locked = false;
     }
 }

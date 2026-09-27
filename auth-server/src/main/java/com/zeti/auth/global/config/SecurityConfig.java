@@ -27,6 +27,8 @@ public class SecurityConfig {
                                 "/error",
                                 "/actuator/**",
                                 "/lab/**",
+                                // 대응 명령 집행 수신. 브라우저 비노출·내부 전용(Compose 내부망, nginx 미프록시).
+                                "/internal/**",
                                 "/auth/v3/api-docs/**",
                                 "/auth/swagger-ui/**",
                                 "/auth/swagger-ui.html"

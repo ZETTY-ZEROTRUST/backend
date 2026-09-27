@@ -57,7 +57,15 @@ public class Pseudonymizer {
     /** 검증된 subject(userId)와 session(검증된 LSID claim, 없으면 null). */
     public Actor actor(long userId, String sessionId) {
         String sessionKey = sessionId == null ? null : mac(NS_SESSION, sessionId);
-        return new Actor(mac(NS_SUBJECT, Long.toString(userId)), sessionKey, keyVersion);
+        return new Actor(subjectKey(userId), sessionKey, keyVersion);
+    }
+
+    /**
+     * subject 가명(HMAC). 로그인 때 이 값 → userId 역매핑을 저장하고, 집행 측은 명령의 target_key.key로 조회한다.
+     * 이벤트 actor.subject_key와 같은 값이라 정책이 관측한 가명을 그대로 대상 해석에 쓸 수 있다.
+     */
+    public String subjectKey(long userId) {
+        return mac(NS_SUBJECT, Long.toString(userId));
     }
 
     /** 검증된 jti. */
