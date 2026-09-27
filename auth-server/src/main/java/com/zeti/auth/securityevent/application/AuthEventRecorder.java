@@ -98,6 +98,20 @@ public class AuthEventRecorder {
                 REFRESH, Outcome.DENIED, null);
     }
 
+    /**
+     * 대응 명령 집행 기록(RESPONSE_APPLIED). 집행 트랜잭션 안에서 조치 DB 변경·결과 저장과 함께 commit한다.
+     * C-02 response_applied_contract: 비HTTP 기록이라 request_id·actor·token_ref·operation·http=null,
+     * 검사 3칸은 NOT_EVALUATED, outcome은 SUCCEEDED/FAILED. 대상(가명)·command 연결은 결과(command_id)가 소유하므로
+     * 이벤트 자체에는 대상을 싣지 않는다(root additionalProperties=false, actor는 null이어야 함).
+     * @param succeeded 상태 변경/기록이 성공했으면 true(SUCCEEDED), 집행 실패면 false(FAILED).
+     */
+    public void responseApplied(boolean succeeded) {
+        requireTransaction();
+        appendOrFail(new Spec(Type.RESPONSE_APPLIED, null, null, null,
+                Check.notEvaluated(), Check.notEvaluated(), Check.notEvaluated(),
+                null, succeeded ? Outcome.SUCCEEDED : Outcome.FAILED, null));
+    }
+
     private void appendOrFail(Spec spec) {
         try {
             outbox.append(factory.create(spec));

@@ -5,7 +5,10 @@ import com.zeti.auth.identity.application.dto.SignupRequest;
 import com.zeti.auth.identity.application.dto.TokenResponse;
 import com.zeti.auth.identity.domain.User;
 import com.zeti.auth.identity.infrastructure.persistence.UserRepository;
+import com.zeti.auth.response.domain.ActorIdentity;
+import com.zeti.auth.response.infrastructure.persistence.ActorIdentityRepository;
 import com.zeti.auth.securityevent.application.AuthEventRecorder;
+import com.zeti.auth.securityevent.application.Pseudonymizer;
 import com.zeti.auth.token.application.JwtIssuer;
 import com.zeti.auth.token.application.RefreshTokenService;
 import com.zeti.auth.token.application.TokenLedgerService;
@@ -29,6 +32,8 @@ public class AuthService {
     private final TokenLedgerRepository tokenLedgerRepository;
     private final AuthStateCacheInvalidator cacheInvalidator;
     private final AuthEventRecorder securityEvents;
+    private final Pseudonymizer pseudonymizer;
+    private final ActorIdentityRepository actorIdentityRepository;
     private final TransactionTemplate transactionTemplate;
 
     public AuthService(UserRepository userRepository,
@@ -39,6 +44,8 @@ public class AuthService {
                        TokenLedgerRepository tokenLedgerRepository,
                        AuthStateCacheInvalidator cacheInvalidator,
                        AuthEventRecorder securityEvents,
+                       Pseudonymizer pseudonymizer,
+                       ActorIdentityRepository actorIdentityRepository,
                        PlatformTransactionManager transactionManager) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -48,6 +55,8 @@ public class AuthService {
         this.tokenLedgerRepository = tokenLedgerRepository;
         this.cacheInvalidator = cacheInvalidator;
         this.securityEvents = securityEvents;
+        this.pseudonymizer = pseudonymizer;
+        this.actorIdentityRepository = actorIdentityRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -84,11 +93,22 @@ public class AuthService {
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new InvalidCredentialsException();
         }
+        // LOCK_ACCOUNT로 잠긴 계정은 자격 증명이 맞아도 로그인하지 못한다.
+        if (user.isLocked()) {
+            throw new LockedAccountException();
+        }
         JwtIssuer.Issued at = jwtIssuer.issue(user.getUserId(), user.getAuthVersion());
         tokenLedgerService.record(at, user.getUserId());
         RefreshTokenService.Issued rt = refreshTokenService.issueNewFamily(user.getUserId());
+        // 집행 측 가명 역매핑(subject_key → userId)을 채운다. 대응 명령은 이 매핑으로만 대상을 해석한다.
+        rememberActorIdentity(user.getUserId());
         securityEvents.loginSucceeded(user.getUserId(), at.lsid(), at.jti());
         return new TokenResponse(at.token(), rt.rawToken());
+    }
+
+    /** 가명(subject_key)→userId 역매핑 upsert. 이미 있으면 merge로 그대로 둔다(로그인마다 안전하게 반복). */
+    private void rememberActorIdentity(Long userId) {
+        actorIdentityRepository.save(ActorIdentity.of(pseudonymizer.subjectKey(userId), userId));
     }
 
     /**
@@ -144,6 +164,26 @@ public class AuthService {
         cacheInvalidator.invalidate(jtis);
     }
 
+    /**
+     * LOCK_ACCOUNT 집행: 전체 회수(authVersion 증가 + RT family·대장 폐기)에 더해 계정을 잠근다.
+     * 잠긴 계정은 이후 로그인이 거부된다. 대응 명령 트랜잭션에 참여한다(REQUIRED).
+     */
+    @Transactional
+    public void lockAccount(Long userId) {
+        logoutAll(userId);
+        userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자 없음"))
+                .lock();
+    }
+
+    /** 잠금 해제(명시적 해제 명령·운영). */
+    @Transactional
+    public void unlockAccount(Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자 없음"))
+                .unlock();
+    }
+
     @FunctionalInterface
     private interface TransactionalWork<T> {
         T run() throws Exception;
@@ -182,6 +222,13 @@ public class AuthService {
     public static class InvalidCredentialsException extends IllegalArgumentException {
         public InvalidCredentialsException() {
             super("이메일 또는 비밀번호가 올바르지 않습니다.");
+        }
+    }
+
+    /** LOCK_ACCOUNT로 잠긴 계정의 로그인 거부. 자격 증명 불일치와 구분되는 분명한 사유를 준다(400). */
+    public static class LockedAccountException extends IllegalArgumentException {
+        public LockedAccountException() {
+            super("계정이 잠금 상태입니다. 관리자에게 문의하세요.");
         }
     }
 

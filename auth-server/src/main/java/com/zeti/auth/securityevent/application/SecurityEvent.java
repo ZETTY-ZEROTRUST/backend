@@ -13,7 +13,8 @@ public final class SecurityEvent {
     private SecurityEvent() {
     }
 
-    public enum Type { AUTHENTICATION, TOKEN_ISSUED, TOKEN_REFRESHED, TOKEN_REUSE, ACCESS_DECISION, BUSINESS_RESULT }
+    public enum Type { AUTHENTICATION, TOKEN_ISSUED, TOKEN_REFRESHED, TOKEN_REUSE, ACCESS_DECISION, BUSINESS_RESULT,
+                       RESPONSE_APPLIED }
 
     public enum Outcome { SUCCEEDED, DENIED, FAILED }
 
