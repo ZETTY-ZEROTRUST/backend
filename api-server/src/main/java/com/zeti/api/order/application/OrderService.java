@@ -7,13 +7,12 @@ import com.zeti.api.order.domain.OrderItem;
 import com.zeti.api.order.infrastructure.persistence.OrderItemRepository;
 import com.zeti.api.order.infrastructure.persistence.OrderRepository;
 import java.util.List;
+import com.zeti.api.security.application.ObjectAccessDeniedException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -38,7 +37,7 @@ public class OrderService {
 
     public OrderDetailResponse getDetail(Long userId, Long orderId) {
         Order order = orderRepository.findByOrderIdAndUserId(orderId, userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+                .orElseThrow(ObjectAccessDeniedException::new);
         List<OrderItem> items = orderItemRepository.findByOrderId(orderId);
         return OrderDetailResponse.of(order, items);
     }

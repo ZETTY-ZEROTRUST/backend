@@ -112,3 +112,32 @@ CREATE INDEX idx_orders_user_ordered ON orders (user_id, ordered_at DESC);
 
 -- 마이페이지 주소 정렬(user_id, is_default DESC, address_id) filesort 제거.
 CREATE INDEX idx_addr_user_default ON addresses (user_id, is_default DESC, address_id);
+
+-- ============================================================================
+-- 보안 이벤트 Outbox (A-06 · I-02 공용 계약: shared/outbox-contract.md)
+-- producer(auth/api)는 outbox INSERT만, relay는 outbox SELECT/UPDATE, indexer는 receipt INSERT/SELECT.
+-- 위 DROP 목록에 넣지 않고 IF NOT EXISTS로 둔다: schema를 다시 적용해도 미발행 이벤트(원본)를 지우지 않는다.
+-- payload는 C-02 security-event/2.0 schema를 통과한 문서다. event_id는 최초 생성 후 바뀌지 않는다.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS security_event_outbox (
+  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  event_id      CHAR(36)     NOT NULL,
+  producer      VARCHAR(16)  NOT NULL,          -- auth | api | bff
+  event_type    VARCHAR(32)  NOT NULL,
+  occurred_at   DATETIME(6)  NOT NULL,          -- UTC, payload.occurred_at과 동일
+  payload       JSON         NOT NULL,          -- security-event/2.0 문서(C-02 스키마 통과본)
+  status        ENUM('PENDING','PUBLISHED') NOT NULL DEFAULT 'PENDING',
+  lease_owner   VARCHAR(64)  NULL,
+  lease_until   DATETIME(6)  NULL,
+  attempts      INT          NOT NULL DEFAULT 0,
+  published_at  DATETIME(6)  NULL,
+  created_at    DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uk_outbox_event (event_id),
+  KEY idx_outbox_pending (status, id)
+);
+
+CREATE TABLE IF NOT EXISTS security_event_receipt (
+  event_id    CHAR(36)     PRIMARY KEY,
+  es_index    VARCHAR(64)  NOT NULL,
+  indexed_at  DATETIME(6)  NOT NULL
+);

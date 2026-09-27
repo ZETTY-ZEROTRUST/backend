@@ -25,7 +25,8 @@ public class JwksPublicKeyProvider {
 
     private final URI jwksUri;
     private final Clock clock;
-    private final Map<String, RSAPublicKey> keys = new ConcurrentHashMap<>();
+    // 갱신 중 공백을 없애기 위해 맵 전체를 한 번에 교체한다(clear+putAll 대신 참조 스왑).
+    private volatile Map<String, RSAPublicKey> keys = Map.of();
     private volatile long lastRefreshMs = Long.MIN_VALUE / 2;
 
     @Autowired
@@ -39,7 +40,8 @@ public class JwksPublicKeyProvider {
     }
 
     public RSAPublicKey getPublicKey(String kid) {
-        RSAPublicKey key = keys.get(kid);
+        Map<String, RSAPublicKey> snapshot = keys;
+        RSAPublicKey key = snapshot.get(kid);
         if (key == null && refreshAllowed()) {
             refresh();
             key = keys.get(kid);
@@ -74,7 +76,6 @@ public class JwksPublicKeyProvider {
                 loaded.put(rsa.getKeyID(), rsa.toRSAPublicKey());
             }
         }
-        keys.clear();
-        keys.putAll(loaded);
+        keys = loaded; // 원자적 참조 교체: 이전 맵을 읽던 요청은 그대로 유효
     }
 }
