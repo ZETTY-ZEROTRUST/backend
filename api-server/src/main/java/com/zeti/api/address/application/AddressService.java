@@ -6,11 +6,11 @@ import com.zeti.api.address.domain.Address;
 import com.zeti.api.address.infrastructure.persistence.AddressRepository;
 import java.util.List;
 import com.zeti.api.mypage.application.MyPageCache;
+import com.zeti.api.security.application.ObjectAccessDeniedException;
+import com.zeti.api.securityevent.application.ApiSecurityEventRecorder;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +19,7 @@ public class AddressService {
 
     private final AddressRepository addressRepository;
     private final MyPageCache myPageCache;
+    private final ApiSecurityEventRecorder securityEvents;
 
     public List<AddressResponse> listByUserId(Long userId) {
         return addressRepository.findByUserIdOrderByIsDefaultDescAddressIdAsc(userId).stream()
@@ -29,7 +30,7 @@ public class AddressService {
     @Transactional
     public AddressResponse update(Long userId, Long addressId, AddressUpdateRequest request) {
         Address address = addressRepository.findByAddressIdAndUserId(addressId, userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+                .orElseThrow(ObjectAccessDeniedException::new);
         address.updateAddress(
                 request.recipientName(),
                 request.recipientPhone(),
@@ -39,6 +40,8 @@ public class AddressService {
                 request.doorPassword(),
                 request.deliveryNote(),
                 request.isDefault());
+        // 업무 변경과 같은 트랜잭션: 함께 commit되고 함께 롤백된다.
+        securityEvents.recordCommittedWrite();
         myPageCache.evictAfterCommit(userId);
         return AddressResponse.from(address);
     }

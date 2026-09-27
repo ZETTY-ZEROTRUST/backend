@@ -16,6 +16,10 @@ management:
 zetty:
   jwt:
     jwks-uri: http://127.0.0.1:1/.well-known/jwks.json
+  events:
+    # 테스트 전용 고정 키(비밀 아님): base64("zetty-test-only-hmac-key-32bytes")
+    hmac-key: emV0dHktdGVzdC1vbmx5LWhtYWMta2V5LTMyYnl0ZXM=
+    hmac-key-version: test-1
 
 # springdoc 자체 기본값은 "활성"이다. 설정이 빠지면 문서가 노출되므로 테스트에도 운영과 같은 기본값을 명시한다.
 springdoc:

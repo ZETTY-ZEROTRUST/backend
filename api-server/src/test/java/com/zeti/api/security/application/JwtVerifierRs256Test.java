@@ -11,6 +11,7 @@ import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.zeti.api.security.infrastructure.jwks.JwksPublicKeyProvider;
+import com.zeti.api.securityevent.application.SecurityEvent.AuthnReason;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
@@ -52,5 +53,25 @@ class JwtVerifierRs256Test {
         String token = sign(new JWTClaimsSet.Builder().subject("140000001")
                 .expirationTime(new Date(System.currentTimeMillis() - 60_000)).build());
         assertThatThrownBy(() -> verifier.verify(token)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> verifier.verify(token))
+                .isInstanceOfSatisfying(JwtVerificationException.class,
+                        e -> assertThat(e.reason()).isEqualTo(AuthnReason.EXPIRED));
+    }
+
+    @Test
+    void failureReasonsDistinguishMalformedFromSignature() throws Exception {
+        assertThatThrownBy(() -> verifier.verify("not-a-jwt"))
+                .isInstanceOfSatisfying(JwtVerificationException.class,
+                        e -> assertThat(e.reason()).isEqualTo(AuthnReason.MALFORMED));
+
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        KeyPair attacker = generator.generateKeyPair();
+        SignedJWT forged = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("kid-1").build(),
+                new JWTClaimsSet.Builder().subject("140000001").build());
+        forged.sign(new RSASSASigner(attacker.getPrivate()));
+        assertThatThrownBy(() -> verifier.verify(forged.serialize()))
+                .isInstanceOfSatisfying(JwtVerificationException.class,
+                        e -> assertThat(e.reason()).isEqualTo(AuthnReason.INVALID_SIGNATURE));
     }
 }
