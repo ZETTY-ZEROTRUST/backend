@@ -1,6 +1,6 @@
 # B-05 API 문서화: springdoc Swagger UI (로컬 전용)
 
-- 상태: 계획
+- 상태: 완료
 - 연결: backend api-server·auth-server · Compose nginx 라우팅
 - 작성/갱신: 2026-09-27
 
@@ -34,8 +34,15 @@
 | 운영에서도 공개 | 공격 표면(엔드포인트·파라미터 목록) 노출 → **로컬 전용** |
 
 ### 시행착오
-(진행 중 추가)
+- "기본 비활성" 테스트가 200으로 실패. 테스트 클래스패스의 `src/test/resources/application.yml`이 main 설정을 통째로 대체해 `enabled: false`가 빠졌고, **springdoc 자체 기본값은 '활성'**이라 문서가 노출됐다. → 테스트 설정에도 운영과 같은 기본값을 명시. 교훈: 설정 누락이 곧 노출로 이어지므로 운영 배포 설정에서 `SWAGGER_ENABLED`를 반드시 false로 둔다.
 
 ## R — 결과
 
-미측정.
+| 확인 | 결과 |
+|---|---|
+| `./gradlew test bootJar`(Java 21 컨테이너) | api·auth 통과. 기본값 404 / 활성 시 200+`bearerAuth` 테스트 포함 |
+| `https://127.0.0.1:8443/swagger-ui.html` | 200, 명세 경로 9개, `bearerAuth` 스킴 |
+| `https://127.0.0.1:8443/auth/swagger-ui.html` | 200, `/auth/login`·`/auth/refresh`·`/auth/logout`·`/auth/signup`·`/.well-known/jwks.json` |
+| lab 위조 엔드포인트 노출 | secure 프로필 명세에 없음 |
+
+사용법: auth 문서에서 `/auth/login` 실행 → `accessToken` 복사 → api 문서의 Authorize에 붙여 넣고 보호 API 호출.
