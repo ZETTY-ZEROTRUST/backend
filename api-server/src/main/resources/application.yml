@@ -52,6 +52,8 @@ management:
 zetty:
   jwt:
     # API는 서명키 저장소(KMS)에 접근하지 않고 Auth가 공개한 JWKS만 사용한다.
+    issuer: ${ZETTY_JWT_ISSUER:https://auth.zeti.com/}
+    audience: ${ZETTY_JWT_AUDIENCE:https://api.zeti.com}
     jwks-uri: ${ZETTY_JWKS_URI:http://auth:8080/.well-known/jwks.json}
   # 보안 이벤트(security-event/2.0 → security_event_outbox). 가명 HMAC 키는 auth-server와 같은 값을 주입한다.
   # EVENT_HMAC_KEY가 없거나 base64 32바이트 미만이면 기동하지 않는다.

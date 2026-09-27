@@ -32,25 +32,37 @@ class JwtVerifierRs256Test {
         keyPair = generator.generateKeyPair();
         JwksPublicKeyProvider provider = mock(JwksPublicKeyProvider.class);
         when(provider.getPublicKey("kid-1")).thenReturn((RSAPublicKey) keyPair.getPublic());
-        verifier = new JwtVerifier(provider);
+        verifier = new JwtVerifier(provider, "https://auth.zeti.com/", "https://api.zeti.com");
     }
 
     private String sign(JWTClaimsSet claims) throws Exception {
-        SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("kid-1").build(), claims);
+        SignedJWT jwt = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("kid-1")
+                        .type(new com.nimbusds.jose.JOSEObjectType("at+jwt")).build(),
+                claims);
         jwt.sign(new RSASSASigner(keyPair.getPrivate()));
         return jwt.serialize();
     }
 
+    /** iss·aud·sub·jti·iat·nbf·exp를 모두 갖춘 정상 AT claim. */
+    private JWTClaimsSet.Builder validClaims() {
+        long now = System.currentTimeMillis();
+        return new JWTClaimsSet.Builder().subject("140000001").jwtID("jti-1")
+                .issuer("https://auth.zeti.com/").audience("https://api.zeti.com")
+                .issueTime(new Date(now)).notBeforeTime(new Date(now))
+                .expirationTime(new Date(now + 900_000));
+    }
+
     @Test
     void acceptsValidRs256Token() throws Exception {
-        String token = sign(new JWTClaimsSet.Builder().subject("140000001")
-                .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+        String token = sign(validClaims().build());
         assertThat(verifier.verify(token).getSubject()).isEqualTo("140000001");
     }
 
     @Test
     void rejectsExpiredToken() throws Exception {
-        String token = sign(new JWTClaimsSet.Builder().subject("140000001")
+        String token = sign(validClaims()
+                .issueTime(new Date(System.currentTimeMillis() - 1_000_000))
                 .expirationTime(new Date(System.currentTimeMillis() - 60_000)).build());
         assertThatThrownBy(() -> verifier.verify(token)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> verifier.verify(token))

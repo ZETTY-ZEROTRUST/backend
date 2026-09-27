@@ -525,12 +525,17 @@ class SecurityEventFlowIntegrationTest {
     }
 
     private JWTClaimsSet.Builder claims(long userId) {
+        long now = System.currentTimeMillis();
         return new JWTClaimsSet.Builder()
                 .subject(String.valueOf(userId))
                 .jwtID(UUID.randomUUID().toString())
+                .issuer("https://auth.zeti.com/")
+                .audience("https://api.zeti.com")
+                .issueTime(new Date(now))
+                .notBeforeTime(new Date(now))
                 .claim("authv", 0)
                 .claim("ext", Map.of("LSID", UUID.randomUUID().toString()))
-                .expirationTime(new Date(System.currentTimeMillis() + 600_000));
+                .expirationTime(new Date(now + 600_000));
     }
 
     private Issued issueAndRegister(long userId) throws Exception {
@@ -541,7 +546,8 @@ class SecurityEventFlowIntegrationTest {
 
     @SuppressWarnings("unchecked")
     private static Issued issue(long userId, KeyPair keys, JWTClaimsSet claims) throws Exception {
-        SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build(), claims);
+        SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID)
+                .type(new com.nimbusds.jose.JOSEObjectType("at+jwt")).build(), claims);
         jwt.sign(new RSASSASigner(keys.getPrivate()));
         Object ext = claims.getClaim("ext");
         String lsid = ext instanceof Map<?, ?> map ? (String) ((Map<String, Object>) map).get("LSID") : null;

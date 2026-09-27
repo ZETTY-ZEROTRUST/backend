@@ -25,6 +25,10 @@ public class JwtIssuer {
     ) {
         this.jwtSigner = jwtSigner;
         this.objectMapper = objectMapper;
+        if (expiration <= 0) {
+            // 만료 없는 AT는 영구 유효 토큰이 된다. 설정 실수를 발급 전에 차단한다.
+            throw new IllegalArgumentException("jwt.expiration은 양수여야 합니다.");
+        }
         this.expiration = expiration;
     }
 
@@ -33,7 +37,7 @@ public class JwtIssuer {
 
     public Issued issue(Long userId, int authVersion) throws Exception {
         String headerJson = """
-            {"alg":"RS256","kid":"%s","typ":"JWT"}
+            {"alg":"RS256","kid":"%s","typ":"at+jwt"}
             """.strip().formatted(jwtSigner.keyId());
         String header = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(headerJson.getBytes(StandardCharsets.UTF_8));
@@ -71,9 +75,7 @@ public class JwtIssuer {
         payload.put("sub", String.valueOf(userId));
         payload.put("authv", authVersion);
 
-        if (expiration > 0) {
-            payload.put("exp", now + expiration);
-        }
+        payload.put("exp", now + expiration);
 
         String payloadJson = objectMapper.writeValueAsString(payload);
         String payloadEncoded = Base64.getUrlEncoder().withoutPadding()
@@ -84,7 +86,7 @@ public class JwtIssuer {
         String compact = headerPayload + "." + signature;
 
         String digest = sha256Hex(compact);
-        long exp = expiration > 0 ? now + expiration : 0;
+        long exp = now + expiration;
         return new Issued(compact, jti, digest, exp, jwtSigner.keyId(), lsid);
     }
 
