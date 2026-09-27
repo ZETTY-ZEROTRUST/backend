@@ -39,6 +39,14 @@ public class AuthClient {
         this.rest = RestClient.builder()
                 .baseUrl(BffProperties.withoutTrailingSlash(properties.authBaseUrl()))
                 .requestFactory(UpstreamHttp.requestFactory(properties))
+                // edge가 만든 요청 ID(UUID)만 전달해 로그인·갱신·로그아웃 이벤트도 같은 요청으로 잇는다.
+                .requestInterceptor((request, body, execution) -> {
+                    String requestId = ApiClient.currentRequestId();
+                    if (requestId != null) {
+                        request.getHeaders().set(ApiClient.REQUEST_ID, requestId);
+                    }
+                    return execution.execute(request, body);
+                })
                 .build();
     }
 
