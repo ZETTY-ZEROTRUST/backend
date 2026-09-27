@@ -25,6 +25,7 @@ public class MyPageService {
     private final OrderService orderService;
     private final PaymentService paymentService;
     private final MyPageCache myPageCache;
+    private final DbBulkhead dbBulkhead;
 
     public MyPageResponse getMyPage(Long userId) {
         if (myPageCache.isEnabled()) {
@@ -32,11 +33,11 @@ public class MyPageService {
             if (cached.isPresent()) {
                 return cached.get();
             }
-            MyPageResponse loaded = load(userId);
+            MyPageResponse loaded = dbBulkhead.call(() -> load(userId));
             myPageCache.put(userId, loaded);
             return loaded;
         }
-        return load(userId);
+        return dbBulkhead.call(() -> load(userId));
     }
 
     private MyPageResponse load(Long userId) {

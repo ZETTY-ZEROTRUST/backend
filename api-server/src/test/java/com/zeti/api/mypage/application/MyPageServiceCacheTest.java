@@ -10,6 +10,7 @@ import com.zeti.api.mypage.application.dto.MyPageResponse;
 import com.zeti.api.order.application.OrderService;
 import com.zeti.api.payment.application.PaymentService;
 import com.zeti.api.user.application.UserService;
+import com.zeti.api.mypage.application.DbBulkhead;
 import com.zeti.api.user.application.dto.UserResponse;
 import java.util.List;
 import java.util.Optional;
@@ -23,7 +24,7 @@ class MyPageServiceCacheTest {
     private final OrderService orders = mock(OrderService.class);
     private final PaymentService payments = mock(PaymentService.class);
     private final MyPageCache cache = mock(MyPageCache.class);
-    private final MyPageService service = new MyPageService(users, addresses, orders, payments, cache);
+    private final MyPageService service = new MyPageService(users, addresses, orders, payments, cache, new DbBulkhead(0, 200));
 
     private final MyPageResponse sample = new MyPageResponse(
             new UserResponse(7L, "a@b", "n", "p", null), null, List.of(), List.of());

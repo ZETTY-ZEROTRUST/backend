@@ -61,3 +61,4 @@
 | [B-05](B-05-swagger.md) | Swagger UI(로컬 전용, Bearer JWT) | 완료 |
 | [B-06](B-06-outbox-events.md) | 보안 이벤트 생산: Transactional Outbox(security-event/2.0, auth·api) | 완료(producer 범위) |
 | [B-07](B-07-jwt-validation-hardening.md) | v2:start JWT 검증 강화(필수 claim·iss·aud·typ·시각) | 계획 |
+| [L-07](L-07-virtual-threads.md) | Virtual Thread vs 플랫폼 스레드(O-02) — 조건부, 풀 경합 주의 | 완료 |
