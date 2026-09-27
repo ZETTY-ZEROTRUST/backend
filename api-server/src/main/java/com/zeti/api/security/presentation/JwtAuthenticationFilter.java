@@ -1,9 +1,8 @@
 package com.zeti.api.security.presentation;
 
 import com.nimbusds.jwt.JWTClaimsSet;
-import com.zeti.api.security.application.AuthStateChecker;
 import com.zeti.api.security.application.AuthStateCache;
-import com.zeti.api.security.application.LedgerVerifier;
+import com.zeti.api.security.application.AuthStateVerifier;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
@@ -29,8 +28,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtVerifier jwtVerifier;
-    private final AuthStateChecker authStateChecker;
-    private final LedgerVerifier ledgerVerifier;
+    private final AuthStateVerifier authStateVerifier;
     private final AuthStateCache authStateCache;
 
     @Override
@@ -61,11 +59,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String jti = claims.getJWTID();
             String digest = sha256Hex(token);
 
-            // positive cache 적중 시 DB 조회(authVersion+대장)를 건너뛴다.
+            // 기본: 매 요청 단일 쿼리로 원본 확인(발급대장 digest+ACTIVE+sub+authVersion).
+            // positive cache는 opt-in(기본 off). 켜졌고 적중하면 DB를 건너뛴다.
             if (!authStateCache.isValidated(jti, userId, authVersion, digest)) {
-                // 원본 확인: 매 요청 authVersion 대조 + 발급 대장 digest 대조.
-                if (!authStateChecker.isCurrent(userId, authVersion)
-                        || !ledgerVerifier.isIssued(token, jti, userId)) {
+                if (!authStateVerifier.verify(token, jti, userId, authVersion)) {
                     SecurityContextHolder.clearContext();
                     chain.doFilter(request, response);
                     return;

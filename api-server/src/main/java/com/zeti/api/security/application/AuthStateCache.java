@@ -21,10 +21,14 @@ public class AuthStateCache {
     private final StringRedisTemplate redis;
     private final Duration ttl;
 
+    private final boolean enabled;
+
     public AuthStateCache(StringRedisTemplate redis,
-                          @Value("${zetty.authstate-cache-ttl-seconds:30}") long ttlSeconds) {
+                          @Value("${zetty.authstate-cache-ttl-seconds:30}") long ttlSeconds,
+                          @Value("${zetty.authstate-cache-enabled:false}") boolean enabled) {
         this.redis = redis;
         this.ttl = Duration.ofSeconds(ttlSeconds);
+        this.enabled = enabled;
     }
 
     private static String token(Long sub, int authVersion, String digest) {
@@ -33,7 +37,7 @@ public class AuthStateCache {
 
     /** 캐시된 검증 결과가 현재 요청과 일치하면 true. 미스·불일치·장애는 false(→ DB 확인). */
     public boolean isValidated(String jti, Long sub, int authVersion, String digest) {
-        if (jti == null) {
+        if (!enabled || jti == null) {
             return false;
         }
         try {
@@ -46,7 +50,7 @@ public class AuthStateCache {
     }
 
     public void store(String jti, Long sub, int authVersion, String digest) {
-        if (jti == null) {
+        if (!enabled || jti == null) {
             return;
         }
         try {

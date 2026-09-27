@@ -31,6 +31,9 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    redis:
+      enabled: false
 
 jwt:
   # 기존 운영 설정값 유지. 합의 목표(900초)는 v2:start 사이클에서 반영한다.
