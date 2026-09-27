@@ -10,3 +10,12 @@ spring:
 management:
   server:
     port: 0
+
+# springdoc 자체 기본값은 "활성". 테스트에도 운영과 같은 비활성 기본값을 명시한다.
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /bff/v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /bff/swagger-ui.html

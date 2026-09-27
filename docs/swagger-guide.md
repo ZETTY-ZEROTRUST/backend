@@ -39,6 +39,7 @@
 |---|---|---|
 | Auth | https://127.0.0.1:8443/auth/swagger-ui.html | 회원가입, 로그인, 토큰 갱신, 로그아웃, 공개키(JWKS) |
 | API | https://127.0.0.1:8443/swagger-ui.html | 내 정보, 마이페이지, 주문, 주소, 결제 |
+| **BFF(브라우저 진입점)** | https://127.0.0.1:8443/bff/swagger-ui.html | 세션 쿠키 로그인, 허용 경로만 API로 전달, 로그아웃 |
 
 명세 JSON: `/auth/v3/api-docs`, `/v3/api-docs`
 
@@ -53,6 +54,19 @@
 3. **API 문서** 우측 상단 **Authorize** → `bearerAuth` 칸에 accessToken만 붙여 넣는다(`Bearer ` 접두사는 Swagger가 붙인다) → Authorize.
 4. `GET /mypage`, `GET /users/me`, `GET /orders` 등을 **Try it out → Execute**.
 5. Access Token 수명은 **900초(15분)**다. 이후 401이 나오면 다시 로그인하거나 `POST /auth/refresh`로 갱신해 Authorize를 새 토큰으로 바꾼다.
+
+## 3-1. BFF 문서로 쓰기 (브라우저가 실제로 쓰는 방식)
+
+Auth·API 문서는 토큰을 직접 다루는 **개발·시험용**이다. 실제 브라우저 흐름은 BFF를 거치며 **토큰을 보지 않는다.**
+
+1. **BFF 문서** → `POST /bff/login` → Try it out → `{ "email": "user001@zetty.test", "password": "loadtest-pw-1234" }` → Execute
+   - 응답에는 `userId`, `csrfToken`만 있다. **AT·RT는 응답에 없다**(BFF 서버의 암호화 vault에만 있다).
+   - 세션 쿠키 `__Host-zetty-session`(HttpOnly·Secure)은 브라우저가 저장하고 이후 요청에 자동으로 붙인다. Swagger 화면이나 JS로는 값을 읽을 수 없다.
+2. **Authorize** → `csrfToken` 칸에 응답의 `csrfToken`을 넣는다. PUT·POST 같은 상태 변경 요청에 `X-CSRF-Token` 헤더로 붙는다.
+3. `GET /bff/api/**`의 경로에 `mypage`, `users/me`, `orders` 등을 넣어 실행 → BFF가 서버 측에서 AT를 붙여 API로 전달한다.
+4. 허용 목록 밖 경로는 404, CSRF 토큰 없는 상태 변경은 403, 다른 Origin은 403이다.
+5. `POST /bff/logout` → 세션·vault 폐기 + 서버 측 토큰 회수. 응답 헤더 `Zetty-Server-Revocation: confirmed|unconfirmed`로 회수 확인 여부를 알려준다.
+6. 새로고침 후 CSRF 토큰이 필요하면 `GET /bff/session`으로 다시 받는다.
 
 ## 4. 엔드포인트 한눈에
 

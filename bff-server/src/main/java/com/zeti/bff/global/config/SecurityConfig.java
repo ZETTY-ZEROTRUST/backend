@@ -65,6 +65,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/bff/login").permitAll()
                         .requestMatchers("/bff/session", "/bff/logout", "/bff/api/**").authenticated()
                         .requestMatchers("/error").permitAll()
+                        // Swagger(로컬 전용). 비활성이면 핸들러가 없어 404.
+                        .requestMatchers("/bff/v3/api-docs/**", "/bff/swagger-ui/**", "/bff/swagger-ui.html").permitAll()
                         // management 포트(9090)에도 이 체인이 적용된다.
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
                         .anyRequest().denyAll())

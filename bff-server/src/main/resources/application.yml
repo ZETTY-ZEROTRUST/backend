@@ -71,3 +71,14 @@ zetty:
       key: ${BFF_VAULT_KEY:}
       key-version: ${BFF_VAULT_KEY_VERSION:1}
       cleanup-interval-ms: 600000
+
+# API 문서: nginx가 /bff/를 BFF로 보내므로 /bff 아래에 둔다. 운영 기본 비활성.
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /bff/v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /bff/swagger-ui.html
+    # 토큰·CSRF 값을 브라우저 저장소에 남기지 않는다.
+    persist-authorization: false
