@@ -1,6 +1,6 @@
 # B-04 BFF 1단계: 브라우저에서 AT·RT 제거 (세션 쿠키 + 암호화 vault + 제한 proxy)
 
-- 상태: 계획
+- 상태: 진행(1단계 구현·자동 테스트 완료 / Compose·실 Redis·MySQL 연결 전)
 - 연결: Jira A-03(1단계) · `docs/auth-token-architecture.md` §2·§4·§5
 - 작성/갱신: 2026-09-27
 
@@ -79,12 +79,75 @@
 - Auth logout 실패 시 내구성 있는 폐기 재시도 작업. 이번에는 '서버 측 회수 미확인'을 로그·지표·응답 헤더로만 구분한다.
 - Compose·Nginx·TLS 연결, Authorization Server 전환, XFF provenance 전달.
 
+### 구현하며 정한 것과 owner 문서(auth-token-architecture)와 다른 점
+
+| 항목 | 1단계 구현 | 문서 목표 / 남은 결정 |
+|---|---|---|
+| 로그인 | 기존 `/auth/login`을 서버 간 호출 | §4 Code+PKCE·OIDC(Authorization Server 전환 후) |
+| userId | Auth 응답 AT의 `sub`를 서명 검증 없이 읽음(표시·vault 소유자용, 인가 근거 아님) | Code 흐름 전환 시 ID token 검증값으로 교체 |
+| `/bff/login` CSRF | 세션·토큰이 없으므로 Origin 정확 일치만 | 로그인 트랜잭션 쿠키 도입 시 재검토 |
+| refresh 조정 | 인스턴스 내부 single-flight | §5 DB lease/version(두 BFF 인스턴스) |
+| 401 후 재시도 | 상태 변경 요청도 1회 재시도(API 401 = 업무 실행 전 거부라는 현재 계약에 의존) | API가 업무 후 401을 내면 재검토, idempotency 계약 |
+| logout | Auth `/auth/logout`은 전체 로그아웃(authVersion 증가 → 다른 기기도 종료) | 현재 세션 logout과 전체 logout 구분 |
+| 회수 실패 | 로그·지표(`bff_logout_total{server_revocation}`)·응답 헤더로 '미확인' 표시만 | 원문 비밀 없는 내구성 있는 폐기 재시도 작업 |
+| 재로그인 | 같은 브라우저 재로그인 시 이전 vault 행만 삭제(이전 RT family는 Auth에서 만료까지 유효) | 이전 family 폐기 여부 |
+| 세션 직렬화 | Spring Session 기본(JDK 직렬화). attribute는 Long·String·CSRF 토큰뿐 | Redis 쓰기 권한 = 역직렬화 위험 → 내부망·AUTH 필수, JSON 직렬화 검토 |
+| vault 키 회전 | 활성 키 1개. 다른 `key_version` 행은 복호화 불가 → 재로그인 | 이전 키 병행 복호화 |
+| proxy 메서드 | 경로마다 API가 실제 제공하는 메서드만 허용(현재 GET·PUT) | 새 API 추가 시 allowlist 갱신 |
+| DDL 적용 | `BFF_SCHEMA_INIT_MODE` 기본 never(별도 적용) | BFF 전용 DB 계정·권한 |
+
+### Compose 연결에 필요한 env (값은 기록하지 않음)
+
+| env | 용도 |
+|---|---|
+| `BFF_VAULT_KEY` | **필수**. base64 32바이트 vault 키. 실행 환경에서 생성, Git·로그 금지 |
+| `BFF_VAULT_KEY_VERSION` | 키 버전(기본 1) |
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | vault MySQL(BFF 전용 계정 권장) |
+| `REDIS_HOST`, `REDIS_PORT` | 세션 Redis(기본 localhost:6379). AUTH 사용 시 `SPRING_DATA_REDIS_PASSWORD` |
+| `AUTH_BASE_URL`, `API_BASE_URL` | 서버 간 호출 대상(기본 `http://auth:8080`, `http://api:8081`) |
+| `BFF_ALLOWED_ORIGIN` | 브라우저가 보는 정확한 origin(기본 `https://127.0.0.1:8443`) |
+| `BFF_SCHEMA_INIT_MODE` | `always`면 기동 시 `bff-schema.sql` 실행(기본 never) |
+| `BFF_SESSION_IDLE_TIMEOUT`, `BFF_SESSION_ABSOLUTE_TIMEOUT` | 세션 유휴 30m / 절대 8h |
+| `JAVA_OPTS`, `TOMCAT_*`, `DB_POOL_MAX`, `DB_CONN_TIMEOUT_MS` | api-server와 같은 튜닝 항목. BFF 포트 8082, management 9090 |
+
 ### 시행착오
 
-(진행 중 추가)
+- 2026-09-27 첫 테스트에서 55건 중 7건 실패. 로그인 직후 **두 번째 요청부터 401**, logout 후에도 세션이 남음.
+  - 원인: `sessionManagement().sessionCreationPolicy(NEVER)`를 지정하자 Spring Security가 `SessionManagementFilter`를 추가했다.
+  - 이 필터는 요청마다 세션 attribute로 만든 인증을 "새 로그인"으로 보고 **세션 ID와 CSRF 토큰을 매 요청 교체**했다(`ChangeSessionIdAuthenticationStrategy`, `CsrfAuthenticationStrategy`). 브라우저가 가진 쿠키·CSRF 토큰이 매번 무효가 된다.
+  - 같은 필터가 DEBUG에서 세션 ID를 로그에 출력했다("Changed session id from …") → 로그 위생 위반이기도 했다.
+  - `requireExplicitAuthenticationStrategy(true)`를 함께 쓰려 했으나 Spring Security가 "정책 지정 + 명시 전략" 조합을 기동 오류로 거부했다.
+  - 조치: `sessionManagement` 설정을 제거(Spring Security 쪽 세션 생성 경로는 request cache 비활성·요청 속성 SecurityContext·세션 없으면 저장 안 하는 CSRF 저장소로 이미 막음). 세션 고정 방어는 `/bff/login`에서 직접 수행한다.
+  - 회귀 테스트: 같은 쿠키로 연속 요청 시 `Set-Cookie` 없음·세션 유지(`ApiProxyTest.consecutiveRequestsKeepSameSessionAndCsrfToken`).
 
 ## R — 개선 결과
 
-미측정.
+실행: 2026-09-27, `eclipse-temurin:21-jdk` 컨테이너, `./gradlew --no-daemon test bootJar` → exit 0, BUILD SUCCESSFUL.
+테스트 환경: auth/api는 MockWebServer stub(실제 계약: RT 회전, 소비된 RT 재제시 → 401 `reuse_detected` + family 폐기), vault는 H2(MySQL 모드), 세션 저장소는 in-memory `MapSessionRepository`(쿠키·필터는 운영과 같은 Spring Session).
+
+| 성공 기준 | 결과 | 근거(테스트) |
+|---|---|---|
+| 10. `test bootJar` | **통과: 55건, 실패 0, 건너뜀 0**(8개 클래스) | `bff-server/build/test-results` |
+| 1. 브라우저 응답에 토큰 없음 | 로그인 응답 body 필드는 `userId`·`csrfToken` 두 개뿐. body·모든 헤더에 AT/RT 원문 없음. `Cache-Control: no-store` | `BffLoginTest.loginReturnsOnlyUserIdAndCsrfToken_neverTokens` |
+| 1. 세션·vault에 원문 없음 | 세션 attribute는 4개(userId·vaultRef·authenticatedAt·csrf)뿐, 원문 없음. vault 암호문 바이트에 평문 없음, BFF 키로만 원문 복원. `session_ref` ≠ 세션 ID | `BffLoginTest.sessionHoldsOnlyReference…` |
+| 쿠키 속성 | `__Host-zetty-session`, Secure·HttpOnly·SameSite=Lax·Path=/, Domain 없음 | `BffLoginTest.sessionCookieIs…` |
+| 2. 세션 고정 방어 | 심어 둔 세션 쿠키로 로그인 → 새 세션 ID 발급, 이전 세션·이전 vault 행 삭제, CSRF 토큰도 새 값 | `BffLoginTest.loginRotatesSessionId…` |
+| 3. vault AEAD | 왕복 성공. 암호문·IV·tag 1비트 변조, AAD(다른 행) 불일치, 다른 키, 절단 → 모두 복호화 실패. 같은 평문도 매번 다른 암호문 | `AesGcmTokenCipherTest` 8건 |
+| 키 fail fast | `BFF_VAULT_KEY`가 비면 애플리케이션 기동 실패. 오류 메시지에 키 값 없음 | `VaultKeyFailFastTest`, `AesGcmTokenCipherTest` |
+| 4. allowlist | 목록 밖 경로(`/admin/users`, `/users/{id}`)·메서드(`DELETE /users/me`) 404, `..` 경로 4xx, API 호출 0건. 경로 판정 23케이스 | `ApiProxyTest`, `ProxyRouteAllowlistTest` |
+| 4. 헤더 제거 | 브라우저의 Authorization·Cookie·X-Forwarded-For/Host/Proto·Forwarded·X-User-Id가 API에 도달하지 않음. API가 받은 Authorization은 vault AT. API의 Set-Cookie도 브라우저로 전달 안 됨 | `ApiProxyTest.getIsForwarded…` |
+| 5. CSRF·Origin | CSRF 없음/위조 403, Origin 없음/유사 도메인 403(로그인 포함), 모두 API·Auth 호출 0건. 익명 unsafe 요청이 세션을 만들지 않음 | `ApiProxyTest`, `BffLoginTest`, `BffLogoutTest` |
+| 6. single-flight | AT 만료 상태에서 실제 Tomcat에 동시 8건 → **8건 모두 동시에 401, Auth refresh 1회, 나머지 7건은 결과 공유, 8건 모두 200**. 5회 반복 모두 동일 | `TokenRefreshTest.concurrent…` |
+| 7. refresh 거부 | 탈취자가 RT를 먼저 회전 → BFF refresh가 재사용 감지 401 → vault 행 삭제·세션 삭제·브라우저 401. 같은 쿠키 재요청 시 API·Auth 호출 없음 | `TokenRefreshTest.refreshRejected…` |
+| 8. logout | Auth logout 1회(현재 RT), vault 행 삭제, 세션 삭제, 204 + `Zetty-Server-Revocation: confirmed`. Auth 500이면 로컬 폐기는 완료 + `unconfirmed` | `BffLogoutTest` 3건 |
+| 9. 로그 위생 | web·http·security·session·jdbc·bff를 DEBUG로 켜고 로그인→조회→refresh→수정→logout 실행: 비밀번호·AT·RT(각 2세대)·세션 쿠키 값·세션 ID·CSRF 토큰 모두 로그에 없음 | `LogHygieneTest` |
+
+### 측정하지 않은 것 (정직한 한계)
+
+- 실제 Redis 세션 저장소(직렬화·TTL·namespace)와 실제 MySQL 8 DDL 적용. 테스트는 in-memory 세션·H2였다.
+- Docker 이미지 빌드, Compose·Nginx·TLS를 거친 브라우저 흐름. `__Host-`/Secure 쿠키는 HTTPS 경유에서만 브라우저가 저장한다.
+- proxy 요청마다 추가되는 DB 조회 1회 + 복호화의 지연·처리량 영향.
+- 여러 BFF 인스턴스 간 refresh 경합(인스턴스 내부 single-flight만 구현).
+- single-flight를 끈 대조군(동시 refresh → 재사용 감지로 강제 로그아웃)은 실행하지 않았다. stub이 회전을 강제하므로 두 번째 refresh는 401이 되어 위 테스트가 실패하는 구조다.
 
 ## 자소서 한 줄 (R 확정 후)
