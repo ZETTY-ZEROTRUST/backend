@@ -1,6 +1,6 @@
 # B-06 보안 이벤트 생산: Transactional Outbox (security-event/2.0)
 
-- 상태: 계획
+- 상태: 완료(producer 범위: auth·api → MySQL Outbox. relay·indexer·실 MySQL 부하·Compose 연결 전)
 - 연결: Jira A-06 · I-02(relay/indexer, 별도 트랙) · `docs/auth-token-architecture.md` §7 · 공용 계약 `shared/outbox-contract.md` · C-02 `log-pipeline/contracts/security-event/v2/` (MANIFEST revision `sha256:30ced95365487033d924fdbcd956f9fea629b09b997fd747e52466fddfae8e50`)
 - 작성/갱신: 2026-09-27
 
@@ -90,12 +90,43 @@ C-02 계약(security-event/2.0)을 통과하는 이벤트를 **MySQL Outbox**에
 
 ### 시행착오
 
-(진행하며 날짜와 함께 추가)
+- 2026-09-27 **request_id를 null로 둘 수 없었다.** 처음 계획은 "`X-Request-Id`가 없으면 null"이었지만, C-02 `request_id_presence` 규칙이 AUTHENTICATION/ACCESS_DECISION/BUSINESS_RESULT에 문자열을 요구한다. null이면 이벤트가 schema를 통과하지 못해 outbox에 넣을 수 없다. → 헤더가 canonical UUID면 그 값을, 아니면 producer가 UUID v4를 만든다. 현재 Nginx는 `X-Request-Id`를 넣지 않으므로(인프라 저장소 설정 확인) 지금은 전부 producer 생성값이며 edge 관측과 join되지 않는다.
+- 2026-09-27 **H2의 JSON 타입.** H2는 문자열 파라미터를 JSON "문자열 값"으로 저장해 되읽으면 따옴표로 감싼 값이 된다. 테스트 DDL만 `payload CLOB`으로 두고, 운영 DDL(JSON)은 MySQL 8.0 일회용 컨테이너에서 따로 적용·INSERT를 확인했다(R 참조).
+- 2026-09-27 **쓰기 성공 뒤의 ACCESS_DECISION 저장 실패를 503으로 바꾸면 안 된다.** 이미 commit된 쓰기를 503으로 보이면 클라이언트가 재시도해 중복 쓰기를 만들 수 있다. 쓰기 성공은 업무 트랜잭션의 BUSINESS_RESULT로 감사가 보장되므로, 503(fail closed)은 "보호 데이터를 돌려주는 조회 성공"에만 적용했다.
+- 2026-09-27 **TOKEN_REUSE 저장 실패가 family 폐기를 되돌리면 안 된다.** 성공 이벤트와 같게 "저장 실패 → 롤백"으로 처리하면, 감사 저장소 장애 때 재사용 공격자의 family가 살아남는다. → 재사용 이벤트 저장 실패는 트랜잭션을 롤백시키지 않고, 폐기 commit 뒤 1회 재시도한다(테스트로 고정).
+- 2026-09-27 **refresh 트랜잭션 경계 변경.** 이전에는 회전(RT 소비)이 먼저 commit되고 AT 발급·대장 기록이 별도였다. 서명 실패 시 RT만 소비되고 새 토큰이 없는 상태가 가능했다. 한 트랜잭션으로 묶으면서 이 틈도 사라졌다(대신 서명 호출 동안 RT 행 잠금이 유지된다. 로그인과 같은 구조).
+- 2026-09-27 빌드 1회차: `SecurityEventFactory`의 생성자가 둘(테스트용 Clock 주입)이라 Spring이 기본 생성자를 찾다 실패 → 주 생성자에 `@Autowired`.
+- 2026-09-27 auth-server에는 컨텍스트를 띄우는 테스트가 없었다. 테스트 `application.yaml`이 main 설정을 가려 `jwt.expiration`이 없어 실패 → 테스트 설정에 값 추가.
 
 ## R — 개선 결과 (Result)
 
-미측정
+측정 환경: `eclipse-temurin:21-jdk` 컨테이너, `./gradlew --no-daemon -q test bootJar`, H2(MySQL 모드) 인메모리, 1회 실행. 부하·실 MySQL 연동 측정은 하지 않았다.
+
+| 항목 | 결과 | 근거 |
+|---|---|---|
+| api-server 빌드·테스트 | exit 0, **39건 통과**(실패 0, 이번 추가 25건) | `SecurityEventFlowIntegrationTest` 13 · `C02FixtureJavaValidationTest` 5 · `ContractRevisionTest` 3 · `PseudonymizerTest` 3 · `JwtVerifierRs256Test` +1 |
+| auth-server 빌드·테스트 | exit 0, **22건 통과**(실패 0, 이번 추가 17건) | `AuthSecurityEventIntegrationTest` 6 · `C02FixtureJavaValidationTest` 5 · `ContractRevisionTest` 3 · `PseudonymizerTest` 3 |
+| C-02 revision pin | 두 앱 모두 MANIFEST revision `sha256:30ced953…8e50` 일치, 복사한 61개 파일(schema 4 + fixture 57) sha256 일치 | `ContractRevisionTest` |
+| Java/Python 같은 판정 | valid 16/16 통과, schema 층 invalid 33/33 거부(기대 규칙 title·pointer가 위반 집합에 포함), parse 층 1/1(중복 key) 거부, scenario 안 문서 전부 schema 통과 | `C02FixtureJavaValidationTest` (networknt 1.5.9, format assertion on — `2026-02-30` 거부 확인) |
+| 생산 이벤트의 계약 적합 | 통합 시험에서 outbox에 쓰인 **모든** payload가 Java validator 통과, 컬럼(event_id·producer·event_type·occurred_at)과 payload 일치 | 두 통합 시험의 `events()` |
+| 업무+이벤트 원자성 | `PUT /users/me`·`PUT /addresses/{addressId}`: 업무 변경과 BUSINESS_RESULT가 함께 commit. 업무 뒤 강제 예외 → 둘 다 없음, 롤백 사실은 요청 종료 뒤 BUSINESS_RESULT(FAILED)로 별도 기록. 트랜잭션 안 outbox 실패 → 업무 롤백 + 503 | `api-server/.../UserService.java:35`, `AddressService.java:44`, `ApiSecurityEventRecorder.java:52` |
+| HTTP 코드 불변 | authn 실패 6종·발급 실패 4종·상태 장애 모두 기존과 같은 401, 소유권 거부 404, 로그인 실패 400, 재사용 401 | 통합 시험 status 단언 |
+| 사유 구분 | TOKEN_MISSING / MALFORMED(Basic·파싱 불가) / INVALID_SIGNATURE / EXPIRED / CLAIM_INVALID, NOT_ISSUED(미등록·digest 불일치) / REVOKED / VERSION_MISMATCH, STATE_UNAVAILABLE(outcome FAILED, actor null), OBJECT_NOT_FOUND_OR_NOT_OWNED | `JwtAuthenticationFilter.java:60,98`, `AuthStateVerifier` |
+| 감사 저장 실패 정책 | 조회 성공 → 503·빈 body, 거부(401·404) → 응답 유지, 로그인 성공 → 롤백 + 503(대장·RT 행 0), 재사용 → family 폐기 유지 | `AccessDecisionAuditFilter.java:65-71`, `AuthService.java:99-121` |
+| 재사용 감지 | family 전체 REVOKED와 TOKEN_REUSE가 함께 commit, 이후 예외(401)로 롤백되지 않음. 다음 세대 RT도 401 | `AuthService.java:105,119` |
+| 원문 비노출 | 테스트에서 쓴 AT·RT 원문, jti, LSID, 비밀번호, 이메일, 현관 비밀번호, 수정한 이름·전화가 어떤 payload에도 없음. `Bearer `·`eyJ` 부재 | `assertNoRawSecrets` |
+| 운영 DDL | `mysql:8.0` 일회용 컨테이너(포트 미공개, tmpfs, 확인 후 삭제)에 `schema.sql` 적용 성공. JSON payload INSERT·`JSON_EXTRACT` 성공, `schema.sql` 재적용 뒤에도 outbox 행 유지 | 수동 명령, exit 0 |
+
+측정하지 않은 것: 보호 요청마다 INSERT 1회(쓰기는 2회)가 늘어난 처리량·p95·pool 영향, 실제 MySQL 권한(`api_app`·`auth_app` INSERT), relay/indexer 연결, Compose 기동.
+
+필요한 설정·후속:
+
+- env: `EVENT_HMAC_KEY`(base64, 32바이트 이상, **auth·api 같은 값**, 없으면 기동 실패), `EVENT_HMAC_KEY_VERSION`(기본 `1`), 선택 `EVENT_ENVIRONMENT`(기본 `local-secure`).
+- DB 권한(인프라 저장소에서 반영): `auth_app`·`api_app` → `security_event_outbox` INSERT, relay 계정 → outbox SELECT·UPDATE, indexer 계정 → `security_event_receipt` INSERT·SELECT.
+- Nginx가 요청마다 canonical UUID `X-Request-Id`를 넣어야 edge 관측과 join된다(Nginx `$request_id`는 32자 hex라 UUID 형식으로 바꿔야 함). 외부에서 온 같은 헤더는 덮어써야 한다.
+- 현재 JwtIssuer가 refresh마다 LSID를 새로 만든다(owner 문서 §3은 "LSID 유지"). 그래서 session_key가 refresh마다 바뀐다.
+- 미등록·만료 RT의 refresh 실패, 로그아웃은 이번 범위에서 이벤트를 만들지 않는다(C-02에 맞는 event_type이 없음).
 
 ## 자소서 한 줄 (R 확정 후)
 
-(R 확정 후 작성)
+인증·인가·업무 사실을 Transactional Outbox로 남기도록 auth·api를 바꾸고, 업무 변경과 이벤트의 동시 commit·롤백, 거부·장애 사유 12종의 구분, 원문 토큰 비노출을 두 앱 61건(이번 추가 42건) 자동 테스트와 Java·Python 공통 계약(C-02, 같은 revision) 검증으로 확인했다(성능 영향은 미측정).
