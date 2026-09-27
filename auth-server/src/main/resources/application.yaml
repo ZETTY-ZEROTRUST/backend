@@ -46,6 +46,12 @@ zetty:
     region: ${ZETTY_KMS_REGION:ap-northeast-2}
   jwt:
     kms-key-id: ${ZETTY_JWT_KMS_KEY_ID:alias/zetty-jwt-signing}
+  # 보안 이벤트(security-event/2.0 → security_event_outbox). 가명 HMAC 키는 api-server와 같은 값을 주입한다.
+  # EVENT_HMAC_KEY가 없거나 base64 32바이트 미만이면 기동하지 않는다.
+  events:
+    environment: ${EVENT_ENVIRONMENT:local-secure}
+    hmac-key: ${EVENT_HMAC_KEY:}
+    hmac-key-version: ${EVENT_HMAC_KEY_VERSION:1}
 
 # API 문서: nginx가 /auth/를 auth로 보내므로 경로를 /auth 아래로 둔다. 운영 기본 비활성.
 springdoc:

@@ -28,7 +28,8 @@ public class JwtIssuer {
         this.expiration = expiration;
     }
 
-    public record Issued(String token, String jti, String digest, long expiresAtEpoch, String kid) {}
+    /** @param lsid 로그인 상관 ID(ext.LSID). 보안 이벤트의 session 가명 원값으로만 쓴다. */
+    public record Issued(String token, String jti, String digest, long expiresAtEpoch, String kid, String lsid) {}
 
     public Issued issue(Long userId, int authVersion) throws Exception {
         String headerJson = """
@@ -52,7 +53,8 @@ public class JwtIssuer {
         payload.put("client_id", "zeti-web");
 
         ObjectNode ext = payload.putObject("ext");
-        ext.put("LSID", UUID.randomUUID().toString());
+        String lsid = UUID.randomUUID().toString();
+        ext.put("LSID", lsid);
         ext.put("fiat", now);
         ext.put("v", 2);
 
@@ -83,7 +85,7 @@ public class JwtIssuer {
 
         String digest = sha256Hex(compact);
         long exp = expiration > 0 ? now + expiration : 0;
-        return new Issued(compact, jti, digest, exp, jwtSigner.keyId());
+        return new Issued(compact, jti, digest, exp, jwtSigner.keyId(), lsid);
     }
 
     private static String sha256Hex(String s) {
