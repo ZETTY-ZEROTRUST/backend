@@ -55,3 +55,4 @@ springdoc:
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:false}
     path: /auth/swagger-ui.html
+    persist-authorization: false

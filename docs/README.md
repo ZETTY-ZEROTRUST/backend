@@ -4,6 +4,8 @@
 
 - [인증·인가와 토큰 저장 아키텍처](./auth-token-architecture.md): 2026-09-06 웹 기준 제안. BFF의 access/refresh token 보관, 브라우저 세션 쿠키, 갱신·폐기·CSRF와 UBA 입력 전환. 미구현이며 인증 부분은 기존 TO-BE보다 이 문서를 우선한다.
 - [AS-IS C4 Architecture](./C4-as-is.md): 현재 코드·설정·mapping·Terraform에서 확인되는 전체 runtime·data·deployment 구조와 정합성 차이
+- [Swagger(API 문서) 사용 가이드](./swagger-guide.md): 로컬 전용 API 문서의 도입 이유, 로그인→Authorize→보호 API 호출 방법, 응답 코드 해석, 보안 주의
+- [실시간 통신 방식 적용 판단](./realtime-channels.md): SSE·Webhook·Polling·WebSocket 적용 위치와 비권장 이유
 - [TO-BE C4 Architecture](./c4-to-be.md): 기존 전체 목표 구조와 전환 순서. 새 인증 설계 및 ML 전환 요청의 우선 범위를 문서 상단에 표시한다.
 
 ## 문서 범위

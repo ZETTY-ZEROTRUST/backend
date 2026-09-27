@@ -61,3 +61,5 @@ springdoc:
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:false}
     path: /swagger-ui.html
+    # 브라우저 저장소(localStorage)에 토큰을 남기지 않는다(프로젝트 원칙). 새로고침하면 다시 Authorize.
+    persist-authorization: false
