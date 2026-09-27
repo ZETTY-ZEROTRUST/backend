@@ -53,3 +53,13 @@ zetty:
   jwt:
     # API는 서명키 저장소(KMS)에 접근하지 않고 Auth가 공개한 JWKS만 사용한다.
     jwks-uri: ${ZETTY_JWKS_URI:http://auth:8080/.well-known/jwks.json}
+
+# API 문서: 운영 기본 비활성, 로컬 Compose에서만 SWAGGER_ENABLED=true
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /swagger-ui.html
+    # 브라우저 저장소(localStorage)에 토큰을 남기지 않는다(프로젝트 원칙). 새로고침하면 다시 Authorize.
+    persist-authorization: false

@@ -46,3 +46,13 @@ zetty:
     region: ${ZETTY_KMS_REGION:ap-northeast-2}
   jwt:
     kms-key-id: ${ZETTY_JWT_KMS_KEY_ID:alias/zetty-jwt-signing}
+
+# API 문서: nginx가 /auth/를 auth로 보내므로 경로를 /auth 아래로 둔다. 운영 기본 비활성.
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /auth/v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /auth/swagger-ui.html
+    persist-authorization: false

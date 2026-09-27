@@ -38,6 +38,7 @@ dependencies {
 	implementation("com.nimbusds:nimbus-jose-jwt:9.40")
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.springframework.boot:spring-boot-starter-data-redis")
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9")
 	runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 	testRuntimeOnly("com.h2database:h2")
 }
