@@ -1,4 +1,8 @@
 spring:
+  threads:
+    virtual:
+      # Java 21 Virtual Thread. I/O 대기가 많고 스레드 풀이 병목일 때만 이득(CPU 바운드엔 무익).
+      enabled: ${VIRTUAL_THREADS:false}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
