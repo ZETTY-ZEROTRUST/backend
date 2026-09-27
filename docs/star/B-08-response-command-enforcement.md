@@ -1,6 +1,6 @@
 # B-08 ResponseCommand 집행(I-04) — Auth 집행 측 수신·검증·멱등 적용
 
-- 상태: 계획
+- 상태: 완료
 - 연결: 로드맵 I-04(response-command 집행) · 계약 `log-pipeline/contracts/response-command/v1` · 이벤트 계약 C-02 `security-event/2.0`(RESPONSE_APPLIED)
 - 작성/갱신: 2026-09-27
 
@@ -56,12 +56,31 @@
 
 ### 시행착오
 
-- (기록 예정)
+- `@Transactional`을 내부 `process()`에만 두고 `handle()`이 같은 빈에서 self-invocation하면 프록시를 우회해 트랜잭션이 시작되지 않는다 → 단일 public `@Transactional handle`로 합쳤다(집행·결과 저장·이벤트가 한 트랜잭션).
+- `ResponseCommandService`에 생성자가 2개(`@Autowired` 없음)면 Spring이 생성자를 고르지 못한다 → Clock 주입용 보조 생성자를 없애고 `Clock.systemUTC()` 필드로 단일 생성자.
+- 재전송 재생 때 `applied_at` 문자열이 정확히 일치하도록 `now`를 마이크로초로 잘라 저장·포맷을 맞췄다(H2 `DATETIME(6)` 왕복 오차 제거).
 
 ## R — 개선 결과 (Result)
 
-미측정
+- 환경: 컨테이너 빌드 `eclipse-temurin:21-jdk`, gradle 8.14.4. 명령 `./gradlew --no-daemon test bootJar`(auth-server, api-server), exit 0(BUILD SUCCESSFUL).
+- 단위/통합 테스트
+  - auth-server **33건 통과**(신규 `ResponseCommandEnforcementTest` 11건 + 기존 22건), 실패·오류·skip 0.
+  - api-server **48건 통과**(FK/`locked`/새 테이블 DDL만 `schema.sql`에 추가, 회귀 0). api-server 테스트는 `sql.init.mode=never`라 `schema.sql`을 로드하지 않는다 → 운영 DDL 자체는 테스트로 검증되지 않는다(수동 확인).
+- 신규 11건이 검증한 것(결과는 response-result/1.0, 이벤트는 security-event/2.0 검증기로 대조):
+  - DRY_RUN은 authVersion/locked 불변, 결과 `DRY_RUN`(RESPONSE_APPLIED/SUCCEEDED 발행).
+  - local-lab ENFORCE `REVOKE_SESSION` → authVersion 0→1(옛 AT의 `authv=0`이 현재 version보다 작아 stale), RT family·발급대장 전부 REVOKED.
+  - `LOCK_ACCOUNT` → `locked=true`·회수, 이후 로그인 400(“잠금” 사유). `unlockAccount` 후 재로그인 200.
+  - 같은 command_id 재전송 → `ALREADY_APPLIED`, applied_at 동일, authVersion 재증가 없음, 새 이벤트 없음.
+  - 만료 → `REJECTED/EXPIRED`, 상태 version 불일치 → `REJECTED/STALE_STATE_VERSION`(observed=현재 version).
+  - synthetic ENFORCE → `REJECTED/ENVIRONMENT_MISMATCH`.
+  - RESPONSE_APPLIED는 secret·raw userId·토큰 없이 발행(C-02 통과), 구조 위반은 `REJECTED/INVALID_COMMAND`로 로그 미저장, command_id 누락은 400.
+- 계약 관찰 / 이탈(요청서 표현 대비)
+  - 거부 사유는 계약 enum을 따른다: 환경 불가 → `ENVIRONMENT_MISMATCH`(요청서의 `ENV_NOT_ALLOWED`는 enum에 없음), 상태 불일치 → `STALE_STATE_VERSION`(요청서의 `STATE_MISMATCH` 아님).
+  - `RATE_LIMIT` ENFORCE는 `status=APPLIED / reason=NONE`(APPLIED는 reason NONE 강제)로 의도만 기록. `RATE_LIMIT_RECORDED` 의미는 로그의 action 컬럼이 나타낸다. 실제 rate limit은 nginx/app 몫으로 범위 밖.
+  - RESPONSE_APPLIED는 계약상 actor·operation·http=null이라 이벤트가 대상을 싣지 못한다 → 대상(가명을 해석한 userId)은 `response_command_log`·결과(command_id)가 소유. REJECTED에는 이벤트를 발행하지 않는다(집행 없음, outcome enum에 rejected 없음).
+  - 대상 해석은 SUBJECT 가명만 지원한다. SESSION/IP는 `REJECTED/TARGET_OUT_OF_SCOPE`(세션→userId 매핑은 유지하지 않음).
+- 미측정: 단계별 처리 시간(성능), `attack-simulation` 러너로 실제 스택 재공격(집행 후 재요청 차단율)은 별도 단계.
 
 ## 자소서 한 줄 (R 확정 후)
 
-(R 확정 후 작성)
+탐지·정책이 만든 대응 명령을 집행 측이 다시 검증(멱등 command_id·만료·환경 allowlist·상태 version·가명 역해석)하고, 회수·잠금·감사 이벤트를 한 트랜잭션으로 집행하는 경로를 구현해 통합 11건으로 DRY_RUN 안전 기본값과 멱등·거부 경로를 검증했다.
