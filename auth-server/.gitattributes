@@ -1,3 +1,5 @@
 /gradlew text eol=lf
 *.bat text eol=crlf
 *.jar binary
+# C-02 계약 복사본: sha256을 MANIFEST와 대조하므로 줄바꿈 변환을 하지 않는다.
+src/test/resources/contracts/** -text
