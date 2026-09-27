@@ -1,6 +1,6 @@
 # B-04 BFF 1단계: 브라우저에서 AT·RT 제거 (세션 쿠키 + 암호화 vault + 제한 proxy)
 
-- 상태: 진행(1단계 구현·자동 테스트 완료 / Compose·실 Redis·MySQL 연결 전)
+- 상태: 완료(1단계)(1단계 구현·자동 테스트 완료 / Compose·실 Redis·MySQL 연결 전)
 - 연결: Jira A-03(1단계) · `docs/auth-token-architecture.md` §2·§4·§5
 - 작성/갱신: 2026-09-27
 
@@ -151,3 +151,21 @@
 - single-flight를 끈 대조군(동시 refresh → 재사용 감지로 강제 로그아웃)은 실행하지 않았다. stub이 회전을 강제하므로 두 번째 refresh는 401이 되어 위 테스트가 실패하는 구조다.
 
 ## 자소서 한 줄 (R 확정 후)
+
+## R-2 — Compose 통합 결과 (nginx HTTPS 경유, 2026-09-27)
+
+| 확인 | 결과 |
+|---|---|
+| `POST /bff/login` 응답 | `userId`, `csrfToken`만. AT·RT 문자열 0건 |
+| 세션 쿠키 | `__Host-zetty-session; Path=/; Secure; HttpOnly; SameSite=Lax` |
+| 쿠키로 `GET /bff/api/mypage` | 200 |
+| 쿠키 없이 가짜 `Authorization: Bearer` | 401(브라우저 Authorization 제거) |
+| `PUT /bff/api/users/me`: CSRF 없음 / CSRF+정상 Origin / 다른 Origin | 403 / 200 / 403 |
+| allowlist 밖 경로 | 404 |
+| `bff_token_vault` | 암호문 961바이트, 평문 JWT 0건 |
+| `POST /bff/logout` → 같은 쿠키 | 204(`Zetty-Server-Revocation: confirmed`) → 401 |
+| DB 권한 | `bff_app`은 `bff_token_vault` DML만 |
+
+### 통합 중 시행착오
+- nginx 경유 요청이 전부 본문 없는 400. BFF에 직접 보내면 200. 원인: `location /bff/` 안에 `proxy_set_header`를 추가하자 server 수준 헤더(Host 등) 상속이 끊겨 Host가 upstream 이름 `bff_up`으로 전달됐고, 밑줄이 든 Host를 Tomcat이 400으로 거부. 공통 헤더를 server 수준으로 옮겨 해결.
+- 기존 `gen-secrets.sh`는 `.secrets/env`가 있으면 종료해 새 비밀값을 추가하려면 전체 초기화가 필요했다 → 빠진 키만 추가하도록 개선.
