@@ -90,3 +90,6 @@ target/
 /.gitmessage
 /docs/PROGRESS.md
 /scripts/.token
+
+# Archived demo runtime artifacts
+/scripts/legacy/.token
