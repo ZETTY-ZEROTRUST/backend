@@ -93,3 +93,6 @@ target/
 
 # Archived demo runtime artifacts
 /scripts/legacy/.token
+
+# Retained contract sync recovery stages
+**/.contracts-stage-*/

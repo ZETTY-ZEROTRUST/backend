@@ -1,42 +1,31 @@
-# 통합 시연 테스트 스크립트
+# Backend scripts
 
-ZETTY 백엔드(api-server + auth-server) 통합 검증용. 회원가입 → 로그인 → JWT 발급 → 자기 자원 API → 부정 토큰 → 위조 토큰 시나리오를 단계별로 자동 실행한다.
+## 현행 계약 동기화
 
-## 사전 조건
+`sync-contracts.sh`는 [sync_contracts.py](sync_contracts.py)의 진입점이다.
 
-- `jq` 설치 (`sudo apt install jq`)
-- auth-server **8080**, api-server **8081** 부팅 상태
-- MySQL 컨테이너에 api-server schema/data 적재 완료
-- 양쪽 서버에서 KMS GetPublicKey 가능 (AWS 자격증명 OK)
-
-## 실행
-
-```bash
-# 전체 순차 실행
-./all.sh
-
-# 단계별
-./01_signup.sh        # 회원가입 (재실행 시 "이미 존재" 통과)
-./02_login.sh         # 로그인 → JWT → ./.token 저장
-./03_self.sh          # /users/me, /orders, /addresses, /payments/*, /mypage 모두 200
-./06_negative.sh      # 미발견 ID 404, 위조 토큰 401, 토큰 누락 401
-./07_forged_token.sh  # 유출된 실험 키로 victim sub 토큰 위조 후 자기 자원 API 호출
+```sh
+scripts/sync-contracts.sh
+scripts/sync-contracts.sh /path/to/contracts
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_sync_contracts.py' -v
 ```
 
-## EC2/다른 환경에서 실행
+1. MANIFEST와 선택 schema/fixture 경로·JSON·SHA256을 먼저 확인한다.
+2. Auth/API 테스트 리소스 양쪽에 복사본을 준비한다.
+3. 준비 후 교체하고, 처리 중 예외가 발생하면 이전 복사본으로 되돌린다.
 
-```bash
-AUTH_URL=http://<host>:<port> API_URL=http://<host>:<port> ./all.sh
-```
+원본 누락·해시 불일치·symlink 이탈은 교체 전에 거부한다.
+revision 변경 시 각 앱 ContractRevisionTest pin과 diff를 함께 확인한다.
+이번 정리에서는 현재 원본 62개 파일의 해시 검증만 실행했으며 실제 앱 복사본 동기화는 필요하지 않아 수행하지 않았다.
 
-`env.sh`의 모든 변수는 환경변수로 override 가능.
+SIGKILL·디스크 오류 등으로 복원이 완료되지 않으면 `.contracts-stage-*/previous`에 남은 backup을 보존한다.
+실패 후 이 디렉토리가 있으면 원본 비교와 수동 복구를 먼저 수행한다.
+여러 프로세스가 같은 앱의 contracts를 동시에 동기화하는 사용은 지원하지 않는다.
 
-## 시나리오 매핑 (PROGRESS.md 1-9 시연 검증 기준)
+## 이전 데모
 
-| 스크립트 | PROGRESS 항목 | 검증 |
-|---|---|---|
-| 01 | signup → 200 | 회원가입 |
-| 02 | login → 200 + accessToken | 토큰 발급 |
-| 03 | /users/me, /orders, /addresses, /payments/balance, /mypage → 200 | 정상 인증 흐름 |
-| 06 | 미발견 999999999 → 404, garbage 토큰 → 401 | 보안 가드레일 |
-| 07 | 위조 token의 `sub`로 `/users/me`, `/addresses` 호출 | JWT 서명키 유출 영향 재현 |
+[legacy](legacy/README.md)에 이전 signup/login/자원 조회/토큰 위조 데모 9개를 모았다.
+토큰을 파일에 저장하거나 AWS/ES256을 전제로 하며 현행 검증 결과를 뜻하지 않는다.
+원문은 그대로 보존했고 이번 정리에서 실행하지 않았다.
+
+현재 보안 검증은 [attack-simulation v2](../../attack-simulation/README.md)를 사용한다.
