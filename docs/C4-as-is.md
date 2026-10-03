@@ -1,5 +1,7 @@
 # ZETTY 전체 시스템 — AS-IS C4 Architecture
 
+> Historical design / audit (2026-10-03): AWS/ES256 and pending implementation descriptions below reflect the earlier state. See [current architecture](../../docs/CURRENT_ARCHITECTURE.md) for current runtime.
+
 > 상태: 네 개 활성 저장소(backend·log-pipeline·attack-simulation·zero-trust-architecture, 모두 `develop`이 최종)와 조직 프로필 `.github`의 현재 코드·설정·매핑·Terraform을 대조한 구조<br>
 > v2 정리: v1 `uba-analyzer`(7-factor 스코어링 + LLM ReAct + Elasticsearch 런타임)는 폐기되었고, v2 탐지 본체는 `log-pipeline`이 소유한다 — 서비스 이벤트 IsolationForest 탐지(`pipeline/detector/detect.py`), incident 묶기·LLM 보고(`pipeline/detector/anomaly_incident.py`), self-contained 학습 노트북(`notebooks/rba_selfcontained_train.ipynb`). 대응 집행은 backend의 I-04 ResponseCommand다.<br>
 > 주의: AWS·Elasticsearch·Slack의 현재 운영 상태를 조회한 문서가 아니다. Deployment View는 Terraform이 **정의한 토폴로지**이며 live 배포 확인 결과가 아니다.

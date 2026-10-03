@@ -1,5 +1,7 @@
 # 인증·인가와 토큰 저장 아키텍처
 
+> Historical design / audit (2026-10-03): AWS/ES256 and pending implementation descriptions below reflect the earlier state. See [current architecture](../../docs/CURRENT_ARCHITECTURE.md) for current runtime.
+
 > 작성: 2026-09-06 · 클라이언트: 사용자 확인으로 웹 확정. BFF는 설계 제안이며 미구현·미배포.
 > 현재 구현 설명은 [AS-IS](./C4-as-is.md), 기존 전체 설계는 [C4 TO-BE](./c4-to-be.md) 참고.
 > 이번 제안은 웹의 토큰 저장·수명·인가·관측 경계를 다룬다. 의도된 IDOR의 처리 방식은 미확정이다.

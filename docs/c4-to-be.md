@@ -1,5 +1,7 @@
 # ZETTY 전체 시스템 — TO-BE C4 Architecture
 
+> Historical design / audit (2026-10-03): AWS/ES256 and pending implementation descriptions below reflect the earlier state. See [current architecture](../../docs/CURRENT_ARCHITECTURE.md) for current runtime.
+
 > **v2 갱신:** 탐지 축은 이미 전환되었다. v1 `uba-analyzer`(7-factor 스코어링 + LLM ReAct + Elasticsearch 런타임)는 폐기되었고,
 > v2 탐지 본체는 `log-pipeline`이 소유한다 — 서비스 이벤트 비지도 IsolationForest 탐지(`pipeline/detector/detect.py`),
 > incident 묶기·LLM 보고(`pipeline/detector/anomaly_incident.py`), self-contained 학습 노트북(`notebooks/rba_selfcontained_train.ipynb`).
