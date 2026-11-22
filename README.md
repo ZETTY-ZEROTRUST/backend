@@ -27,7 +27,7 @@ python3 ops/workspace.py status
 ./gradlew test bootJar
 ```
 
-Swagger 사용은 [가이드](docs/swagger-guide.md), 전체 연결은 [현재 구조](../docs/CURRENT_ARCHITECTURE.md)를 본다.
+Swagger 사용은 [가이드](docs/swagger-guide.md), 인증 연결은 [인증·토큰 구조](docs/auth-token-architecture.md)를 본다.
 위 Gradle 명령은 실행 안내다. 이번 문서 정리에서 세 앱 전체 검사를 재실행한 기록은 아니다.
 
 ## 코드 구조
@@ -60,11 +60,11 @@ Auth/API가 [SecurityEvent v2](../log-pipeline/contracts/README.md)를 Outbox에
 [전달 파이프라인](../log-pipeline/pipeline/README.md)이 Streams→ES를 담당한다.
 schema revision 변경 시 `scripts/sync-contracts.sh`와 앱 ContractRevisionTest의 pin을 함께 확인한다.
 
-## 현재 코드와 이전 자료
+## 현재 코드와 측정 기록
 
 - [현행 문서 지도](docs/README.md)
-- [이전 README](docs/history/README-pre-local-20261003.md): AWS/ES256/두 앱/토큰 데모 설명을 보존한 역사 자료.
-- [scripts 안내](scripts/README.md): 현행 동기화 명령과 `legacy/` 데모 구분.
+- [인증·토큰 아키텍처](docs/auth-token-architecture.md): 현재 BFF/Auth/API 경계.
+- [scripts 안내](scripts/README.md): 계약 동기화 명령.
 - [STAR 기록](docs/star/README.md): 구현·실측·철회/한계 기록.
 
 과거 위조 성공 기대값이나 raw-token 로그 경로는 현재 실행 기준이 아니다.
