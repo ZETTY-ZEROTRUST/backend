@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZETTY 인증·인가 검토"
+  short_description: "인증·인가·회수와 BFF 세션의 신뢰 경계를 검토합니다."
+  default_prompt: "$zetty-auth-guard 스킬을 사용해 현재 요청의 근거와 변경·검증 범위를 정리해줘."
