@@ -1,4 +1,4 @@
 interface:
   display_name: "ZETTY 이벤트 계약"
-  short_description: "신뢰 이벤트·공통 계약·감사 전달과 복구를 검토합니다."
-  default_prompt: "$zetty-event-contract-guard 스킬을 사용해 현재 요청의 근거와 변경·검증 범위를 정리해줘."
+  short_description: "감사 저장부터 HTTP 전달과 UBA 수신까지 계약을 검토합니다."
+  default_prompt: "$zetty-event-contract-guard 스킬로 감사 저장·HTTP 전달·UBA 수신의 내구성과 계약을 검토해줘."

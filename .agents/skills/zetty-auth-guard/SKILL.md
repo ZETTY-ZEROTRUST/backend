@@ -1,31 +1,30 @@
 ---
 name: zetty-auth-guard
-description: "ZETTY Auth·BFF·API의 로그인, 세션, JWT, 객체 인가, 권한 변경과 접근 회수를 구현하거나 검토할 때 사용한다. 단순 DTO·주석 편집에는 전체 인증 검토를 강제하지 않는다."
+description: "ZETTY 서버 세션의 로그인, CSRF, 객체 인가, 계정 상태와 세션 회수를 설계·구현·검토할 때 사용한다. 단순 주석 편집에는 전체 인증 검토를 강제하지 않는다."
 ---
 
 # 인증·인가·회수 경계
 
-현재 세션의 최신 사용자 지시와 backend/README.md, backend/docs/auth-token-architecture.md, 변경 대상 앱의 실제 filter/service/test를 읽는다. 현재 세션의 사용자 지시와 실제 owner 문서를 따른다. 경로는 ZETTY 워크스페이스 기준이다. 개별 레포를 열었으면 부모에서 형제 레포를 찾고, 없으면 해당 교차 검증을 미실행으로 보고한다.
+backend/README.md, backend/docs/auth-token-architecture.md와 변경 대상의 실제 security/service/test를 읽는다.
 
-## 현재 구성과 변경 범위
+## 검토 순서
 
-현재 Java 21·Auth/API/BFF·RS256·AT 900초·MySQL 원본·Redis 실행 기반을 출발점으로 삼는다. PostgreSQL은 사용자가 선택한 향후 전환 방향이며 현재 코드·DB가 전환 완료됐다는 뜻이 아니다. 에이전트 구성 작업만으로 실행 코드나 데이터베이스를 바꾸지 않는다. 현재 Auth는 JSON /auth/login·/auth/refresh이며 Authorization Code/OIDC를 구현했다고 쓰지 않는다. 새 업무의 인증 요구와 객체 권한을 먼저 정하고 재사용/수정/제거할 구성과 근거를 제시한다. 별도 인가 서버를 현재 구현으로 가정하지 않는다.
-
-## 바뀌면 안 되는 신뢰 경계
-
-- 브라우저는 BFF 세션 쿠키, 서버는 AT/RT를 보관한다. BFF cookie/CSRF/Origin과 API Bearer 검증은 다른 경계다.
-- principal은 검증한 신원에서 얻는다. 요청 user ID·decoded claim·외부 신원/XFF header로 대체하지 않는다.
-- 서명·issuer·audience·시간·kid 검증과 발급 digest·상태/authVersion 확인을 구분한다. Auth만 서명 권한을 갖는다. security positive cache 추가는 별도 일관성 검증이 필요하다.
-- RT 회전·재사용 감지·BFF 갱신 경합·응답 유실을 함께 확인한다. DB/Redis 상태 확인 실패를 허용으로 바꾸지 않는다.
-- 현재 본인 객체 조회는 소유자 범위 query로 제한한다. 직원/팀/담당 고객 모델은 명시적인 권한 설계와 query 변경이 필요하며 ROLE 하나로 전체 고객 접근을 열지 않는다.
-- 정상 키 회전과 compromised kid 긴급 철회, 세션 회수와 전체 계정 회수의 실제 구현 효과를 각각 검사한다.
-- AI는 명시적 인가를 완화하거나 Auth DB를 직접 수정하지 않는다. 정책 요청의 대상·만료·환경·멱등성과 집행 receipt를 확인한다. 의도 기록만 하는 조치를 집행 성공으로 보고하지 않는다.
-- JWT·RT·Cookie·password·개인키를 로그/fixture/prompt/commit에 남기지 않는다. secure와 취약 lab은 issuer·키·쿠키·network·volume을 분리한다.
+1. trust-chain-server의 서버 세션 흐름을 읽고 ZETTY에 가져올 설정과 제거할 기존 토큰 구성을 구분한다. 원본은 수정하지 않는다.
+2. 검증된 principal에서 actor를 얻는다. 요청 user ID, 미검증 토큰, 외부 헤더를 신원으로 신뢰하지 않는다.
+3. 세션 쿠키 Secure/HttpOnly/SameSite, CSRF·Origin, 로그인 시 세션 ID 교체, 유휴·절대 만료, 로그아웃을 확인한다. 신뢰 프록시 범위 없이 XFF를 확정 IP로 쓰지 않는다.
+4. 계정 상태/authVersion 변경 후 기존 세션의 실제 접근 회수와 캐시 지연을 확인한다. DB·Redis 장애를 허용으로 바꾸지 않는다.
+5. 주문 접근은 principal의 소유권 범위 query로 제한한다. 직원·팀 모델을 새로 도입하지 않는다. OBJECT_NOT_FOUND_OR_NOT_OWNED로 실제 소유자를 추정하지 않는다.
+6. 로그인 성공·주문 접근 거부 감사의 발생 위치를 확인한다. Redis 세션 저장과 PostgreSQL 감사는 원자적이지 않으며 부분 실패 처리가 필요하다. 거부 감사는 업무 rollback과 분리한다.
+7. AI는 실시간 인가 조건이나 자동 회수 집행자가 아니다. UBA가 backend DB/세션 Redis를 직접 변경하지 않는다.
 
 ## 검증
 
-권한 표의 정상/거부 경로, 권한 변경 뒤 기존 토큰, RT 동시성, 회수 전후 요청, 우회 진입점, 장애 시 실패 동작을 변경 범위에 맞춰 검사한다. Java 21을 확인하고 변경된 각 앱에서 ./gradlew test bootJar를 실행한다. 미실행은 그대로 보고한다. 다른 프로젝트의 모듈 구조나 Spring Security 도입 금지 규칙을 가져오지 않는다.
+변경 범위에 맞춰 정상/거부, CSRF, 세션 고정 방지, 만료·로그아웃·계정 회수, 소유권, 장애와 감사 누락을 검사한다. Java 21과 실제 Gradle task를 확인한다. 아직 없는 네 모듈이나 테스트를 실행했다고 보고하지 않는다. JWT·쿠키·비밀번호·키를 로그/fixture/prompt에 남기지 않는다.
 
-## 구조 설계 참조
+## 구조와 작업 범위
 
-[시나리오 기반 구조 설계](../../references/system-design.md)를 Trust Chain 계층으로 이동할 때 앱별 DI·DB 권한·Auth 전용 서명키와 기존 인증·인가·감사 transaction 경계를 검토한다. Jev 판단을 실시간 인가 조건으로 넣지 않는다.
+[현재 선택한 구조와 작업 경계](../../references/system-design.md)를 먼저 읽는다. 목표는 서버 세션을 사용하는 단일 backend(네 Gradle 모듈, 실행 앱 하나)와 uba-analyzer, PostgreSQL이다. 실제 구현은 단계별로 확인한다. 기존 Auth/API/BFF·MySQL 코드를 목표 구조가 구현됐다는 증거로 쓰거나, 기존 JWT 기능을 반드시 보존할 목표로 취급하지 않는다.
+
+사용자와 변경 이유·흐름·대상 파일·검증 방법을 먼저 정하고 승인한 단계만 구현한다. 같은 범위의 승인을 반복 요청하지 않는다. 설계·문서·에이전트 구성 요청은 실행 코드·SQL·의존성·Compose·데이터 변경이나 서비스/공격/유료 API 실행 권한이 아니다. trust-chain-server 원본은 읽기 전용이다.
+
+경로는 워크스페이스 기준이다. 개별 clone에서는 자기 README와 실제 파일을 먼저 확인하고 없는 형제 레포가 필요한 검증만 미실행으로 남긴다. 삭제된 log-pipeline 런타임·계약·테스트를 복원하지 않는다. Java 전달 작업은 backend, Python 수신·집계·Jev·보고서는 uba-analyzer가 소유한다.

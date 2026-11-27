@@ -10,7 +10,7 @@ description: "승인된 ZETTY 로컬 통합 테스트를 실제 owner 절차에 
 ## 이 파일의 역할 — 오케스트레이션만
 
 **시나리오 정의는 이 파일에 두지 않습니다.** 실행 절차·검증 명령·기대 응답은 전부
-`attack-simulation/README.md`, `log-pipeline/pipeline/README.md`, `zero-trust-architecture/compose/README.md`의 실제 실행 절차가 소유하며, 이 command는 "어떤 케이스를 고르고,
+`backend/README.md`, `uba-analyzer/README.md`, `attack-simulation/README.md`, `zero-trust-architecture/compose/README.md`의 실제 실행 절차가 소유하며, 이 command는 "어떤 케이스를 고르고,
 어떤 순서로 태우고, 어떻게 보고할지"만 규정합니다.
 
 시나리오·기대값은 실제 owner 문서와 테스트 코드에서 읽습니다. endpoint·payload·예상 결과를 이 스킬에 복제하지 않습니다. Markdown 케이스 문서가 없어도 기존 테스트 함수·runner가 검증 범위와 기대값을 정의할 수 있습니다.
@@ -23,10 +23,10 @@ description: "승인된 ZETTY 로컬 통합 테스트를 실제 owner 절차에 
 
 사용자가 지정한 케이스·명령·실패 결과가 있으면 그것을 선택합니다. 없으면 대상 변경과 owner README에서 해당 테스트를 찾습니다.
 
-- backend: 변경 앱의 현재 테스트. PostgreSQL 전환을 실제로 구현하는 요청일 때만 별도 PostgreSQL 검증 절차를 추가.
-- log-pipeline: `pipeline/tests/integration/run.sh`와 실제 pytest 테스트·선택자.
-- attack-simulation: `README.md`의 현재 네 시나리오와 앞으로 구현될 실제 runner. 삭제된 `scenarios/v2/`·`load/`를 실행 경로로 안내하지 않는다. 정의만 있고 runner가 없으면 실행 미구현으로 보고한다.
-- Compose: `compose/README.md`의 구성·기동·복구 검증.
+- backend: 실제 존재하는 변경 모듈 테스트. PostgreSQL SQL·잠금·중복 계약은 승인된 전용 PostgreSQL에서 검증한다.
+- uba-analyzer: 실제 구현된 수신·멱등성·집계·분석·보고서 테스트와 선택자. README만 있으면 실행 미구현으로 보고한다.
+- attack-simulation: `README.md`의 현재 두 시나리오와 앞으로 구현될 실제 runner. 삭제된 `scenarios/v2/`·`load/`를 실행 경로로 안내하지 않는다. 정의만 있고 runner가 없으면 실행 미구현으로 보고한다.
+- Compose: `compose/README.md`와 local-runtime-design.md를 대조한다. 남은 기존 Compose를 새 구조의 검증으로 실행하지 않는다. 새 구성이 없으면 해당 검증은 SKIP이다.
 
 서로 다른 실행 대상 중 선택이 필요한 경우에만 사용 가능한 질문 도구 또는 일반 질문으로 필요한 범위를 확인합니다. 이미 지정된 케이스를 재확인하지 않습니다.
 
@@ -40,7 +40,7 @@ local target allowlist·모의 계정·요청량·기간·timeout·종료 조건
 
 실제 owner의 전제 조건과 명령을 읽고, 승인된 로컬 테스트에 필요한 의존성·이미지·일회용 서비스를 준비합니다. 명령을 다른 레포에서 실행하거나 기존 stack을 테스트용으로 초기화하지 않습니다. 이미지 태그는 명시된 override 또는 실제 runner의 규칙만 사용합니다.
 
-현재 DB는 MySQL입니다. PostgreSQL은 향후 전환 방향이며 이 스킬 설치로 전환됐다고 보고하지 않습니다. 향후 전환 구현 범위에서 PostgreSQL schema 초기화를 할 때는 새 테스트 DB에만 적용합니다. 기존 DB의 데이터 이동·스키마 전환은 해당 검증 절차를 따르며 초기화 SQL을 무조건 재실행하지 않습니다.
+목표 DB는 PostgreSQL이며 현재 코드의 전환 완료 여부는 실제 파일로 확인합니다. 승인된 PostgreSQL 검증에서 schema 초기화는 새 테스트 DB에만 적용합니다. 기존 DB의 데이터 이동·스키마 전환은 해당 검증 절차를 따르며 초기화 SQL을 무조건 재실행하지 않습니다.
 
 ### Step 3 — 시나리오 실행
 
@@ -106,5 +106,10 @@ FAIL이 있으면 `docker logs <컨테이너>`의 관련 구간에서 비밀·�
 ## ZETTY 실행 제한
 요청에 케이스·범위가 명시되면 다시 묻지 않는다. 불명확할 때만 필요한 범위를 확인한다. local allowlist·모의 계정·요청 수·기간·종료 조건을 확인한다. 자신이 만든 일회용 자원만 정리한다. JWT/쿠키/비밀번호/키/업무 본문은 실패 보고에서 제거한다.
 
-## 현재 구현과 구성의 범위
-현재 ZETTY DB 구현은 MySQL이며 PostgreSQL은 향후 전환 방향이다. 스킬·에이전트 구성만 요청된 작업에서는 실행 코드·SQL·Compose·의존성·데이터를 변경하지 않는다. 위 절차의 구현·실행 단계는 해당 작업이 실제 요청된 경우에만 적용한다. 경로는 ZETTY 워크스페이스 기준이며 개별 clone에서는 자기 레포의 README와 실제 코드를 먼저 읽고 없는 형제 레포의 교차 검증만 미실행으로 남긴다.
+## 구조와 작업 범위
+
+[현재 선택한 구조와 작업 경계](../../references/system-design.md)를 먼저 읽는다. 목표는 서버 세션을 사용하는 단일 backend(네 Gradle 모듈, 실행 앱 하나)와 uba-analyzer, PostgreSQL이다. 실제 구현은 단계별로 확인한다. 기존 Auth/API/BFF·MySQL 코드를 목표 구조가 구현됐다는 증거로 쓰거나, 기존 JWT 기능을 반드시 보존할 목표로 취급하지 않는다.
+
+사용자와 변경 이유·흐름·대상 파일·검증 방법을 먼저 정하고 승인한 단계만 구현한다. 같은 범위의 승인을 반복 요청하지 않는다. 설계·문서·에이전트 구성 요청은 실행 코드·SQL·의존성·Compose·데이터 변경이나 서비스/공격/유료 API 실행 권한이 아니다. trust-chain-server 원본은 읽기 전용이다.
+
+경로는 워크스페이스 기준이다. 개별 clone에서는 자기 README와 실제 파일을 먼저 확인하고 없는 형제 레포가 필요한 검증만 미실행으로 남긴다. 삭제된 log-pipeline 런타임·계약·테스트를 복원하지 않는다. Java 전달 작업은 backend, Python 수신·집계·Jev·보고서는 uba-analyzer가 소유한다.

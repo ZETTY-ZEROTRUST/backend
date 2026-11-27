@@ -25,7 +25,7 @@ description: "ZETTY 기능·수정·리팩토링을 설계→계획 검토→구
 | `zetty-architect` | 계획 수립, 분류, layer 검증 | read-only |
 | `codex-reviewer` | 별도 Codex 서브에이전트에서 plan/code 독립 검토 | read-only 역할 |
 | `java-spring-coder` / `python-pipeline-coder` / `devops` | 대상 Java / Python / Compose 구현 | read+write+테스트 실행 |
-| `postgres-expert` | 향후 PostgreSQL 전환 설계·검토 | read-only 역할 |
+| `postgres-expert` | 선택한 PostgreSQL의 스키마·쿼리·전환 검토 | read-only 역할 |
 | `zetty-tester` | 종합 테스트 작성 | read+write+테스트 실행 |
 
 역할 파일은 현재 레포의 `.codex/agents/`에서 확인합니다. 없는 역할·스킬이나 위임 도구를 호출했다고 주장하지 않습니다. 주 세션이 해당 단계를 수행하거나 필요한 별도 레포에 명시적으로 작업을 전달하고, 독립 검토 여부를 보고합니다.
@@ -38,8 +38,8 @@ description: "ZETTY 기능·수정·리팩토링을 설계→계획 검토→구
 
 **BLOCKING 정의 — 이것만 루프를 돌린다:**
 - 대상 레포의 실제 구현 계약·계층 경계 또는 기존 테스트가 입증하는 위반
-- Auth/BFF/API·producer/consumer 사이의 검증된 책임 경계 파괴
-- auth·RBAC 계약 파괴 (세션/CSRF/bearer 정책 우회, authority 검사 누락)
+- backend·UBA·producer/consumer 사이의 검증된 책임 경계 파괴
+- auth·RBAC 계약 파괴 (세션/CSRF/객체 소유권 정책 우회, authority 검사 누락)
 - 검증되지 않은 schema 파괴적 변경 (데이터 손실, 앱 호환성 파괴, 필요한 전환 절차 누락)
 - plan이 사용자 요청을 실제로 충족하지 못함
 
@@ -51,10 +51,10 @@ description: "ZETTY 기능·수정·리팩토링을 설계→계획 검토→구
    - 검토 대상: architect의 plan 전체 (텍스트 그대로 첨부)
    - 검토 지시: 위 BLOCKING 목록에 해당하는 것만 `BLOCKING:` 접두사로, 나머지는 전부 `NOTE:` 접두사로 출력하라고 **명시**. 애매하면 `NOTE:`로 내리라고 명시. 참고 파일로 대상 레포 README, `backend/docs/auth-token-architecture.md`, 해당 변경의 실제 테스트와 schema/fixture/revision를 직접 읽어 대조하라고 명시.
 3. 판정:
-   - **BLOCKING 없음** → NOTE 목록만 챙겨서 즉시 Step 2. NOTE 때문에 architect를 다시 부르지 않는다.
+   - **BLOCKING 없음** → NOTE 목록을 보존하고 아래 구현 범위 확인 후 Step 2. NOTE 때문에 architect를 다시 부르지 않는다.
    - **BLOCKING 있음 & 재계획 이력 없음** → `zetty-architect`를 plan + BLOCKING findings와 함께 **딱 1회** 재호출하여 개정 plan 요청 → `codex-reviewer` 재검토.
    - **BLOCKING 있음 & 이미 1회 재계획함** → 재계획 위임 루프를 종료하고 주 세션이 근거를 직접 판단합니다. 해결 가능한 결함은 고치고, 필수 사용자 결정이나 외부 조건 때문에 불가능한 부분만 미해결로 보고합니다. 결함을 무시한 채 완료로 처리하지 않습니다.
-4. PASS 시 최종 plan과 NOTE 목록을 보존하고 다음 단계로.
+4. PASS 시 최종 plan과 NOTE 목록을 보존한다. 구현 전에 사용자에게 변경 이유·흐름·대상 파일·검증 방법을 설명하고 승인된 단계인지 확인한다. 설계/지침 요청이면 여기서 끝낸다. 같은 구현 범위의 기존 승인은 다시 묻지 않는다.
 
 ### Step 2 — Implement
 
@@ -64,22 +64,22 @@ description: "ZETTY 기능·수정·리팩토링을 설계→계획 검토→구
 - Step 1 reviewer의 `Reviewer notes (non-blocking)` 목록 — "판단해서 반영하되, 이것 때문에 plan 구조를 바꾸지는 말 것" 명시
 - "실제 의존 순서(schema/contracts → 대상 service/adapter → consumer/config)로 적용하고 변경된 동작의 핵심 회귀 검증을 함께 수행하라" 명시
 
-coder는 대상 레포의 검증 명령을 실행합니다. backend는 Java 21에서 변경 앱의 `./gradlew test bootJar`, pipeline은 README의 unit/contract 및 필요한 통합 테스트, Compose는 `config --quiet`를 사용합니다. BLOCKED 보고가 오면 주 세션이 원인을 확인하고 해결 가능한 실행환경·코드 문제를 처리합니다.
+coder는 대상 레포의 검증 명령을 실행합니다. backend는 Java 21에서 실제 존재하는 Gradle 모듈의 test/bootJar task, UBA는 구현된 unit/contract 테스트, Compose는 해당 구성의 `config --quiet`를 사용합니다. 목표 모듈·테스트가 아직 없으면 실행 완료로 보고하지 않습니다. BLOCKED 보고가 오면 주 세션이 원인을 확인하고 해결 가능한 실행환경·코드 문제를 처리합니다.
 
 ### Step 3 — Review code (Loop B · 최대 3회)
 
 **PASS 조건:** 호출된 모든 reviewer가 BLOCKING finding을 보고하지 않음.
 
 1. coder의 보고에서 DB 코드 변경 여부 판단:
-   - `backend/api-server/src/main/resources/schema.sql` 수정
-   - BFF schema, JPA entity/repository, JDBC 또는 Python SQL adapter 변경
-   - DB 계정·테이블·컬럼 권한 또는 설정 변경(향후 PostgreSQL 전환이면 sequence 권한 포함)
-   - 트랜잭션·잠금·receipt/replay 의미 변경
+   - 승인된 PostgreSQL 스키마/마이그레이션 수정
+   - backend/UBA schema, JPA entity/repository, JDBC 또는 Python SQL adapter 변경
+   - DB 계정·테이블·컬럼 권한 또는 설정 변경(필요한 sequence 권한 포함)
+   - 트랜잭션·잠금·감사 원자성·HTTP ACK·중복 수신 의미 변경
    위 중 하나라도 해당 → DB 변경 있음.
 
 2. **독립 reviewer를 사용 가능한 Codex 위임 도구로 병렬 호출**:
    - 항상: `codex-reviewer` — coder의 변경 diff와 plan 전달, "변경된 코드가 plan과 일치하고 architecture/auth 규칙을 위반하지 않는지" 검토.
-   - PostgreSQL 설계·전환이 요청된 경우: `postgres-expert` — 현재 MySQL 코드와 제안된 entity/repository/schema 매핑을 전달해 변환·권한·잠금·검증 위험을 점검. 현재 MySQL만 고치는 작업은 실제 MySQL 의미를 기준으로 검토하고 PostgreSQL 문법을 강제하지 않음.
+   - PostgreSQL 관련 DB 변경이 있는 경우: `postgres-expert` — 실제 변경 전 코드와 제안된 entity/repository/schema 매핑을 전달해 변환·권한·잠금·검증 위험을 점검. 현재 MySQL만 고치는 작업은 실제 MySQL 의미를 기준으로 검토하고 PostgreSQL 문법을 강제하지 않음.
 
 3. reviewer 중 누구라도 BLOCKING을 보고하면:
    - **iteration < 3**: 대상 구현자(`java-spring-coder`, `python-pipeline-coder` 또는 `devops`)를 BLOCKING findings와 함께 재호출하여 수정 요청 → 재검토 (DB 변경 여부 재판단).
@@ -153,7 +153,7 @@ Step 1 plan의 **Docs to update** 섹션에 따라 대상 레포의 실제 API �
 
 ## Skip 가능 조건
 
-trivial 변경 (단일 파일, 동작 변경 없음, DB 무관)은 주 세션에서 처리할 수 있습니다. 전체 계획·독립 검토·테스터 체인을 강제하지 않습니다. 위험에 비례한 확인과 문서 링크·diff 검사를 수행합니다.
+실행 동작과 DB에 영향 없는 작은 문서·에이전트 지침 변경은 주 세션에서 처리할 수 있습니다. 전체 계획·독립 검토·테스터 체인을 강제하지 않습니다. 위험에 비례한 확인과 문서 링크·diff 검사를 수행합니다.
 
 ## 시작 전 체크리스트
 
@@ -165,9 +165,10 @@ trivial 변경 (단일 파일, 동작 변경 없음, DB 무관)은 주 세션에
 ## ZETTY 저장소 경계
 대상 파일의 레포별 담당자를 정한다. 공통 계약·Compose는 한 명만 편집하고 독립 검토만 병렬로 수행한다. 작은 문서/이름 변경은 주 세션에서 처리하고 전체 체인을 강제하지 않는다. 서브에이전트를 쓸 수 없으면 같은 단계로 주 세션에서 진행하되 독립 검토 미실행을 명시한다. 모델은 상위 세션 설정을 상속한다.
 
-## 현재 구현과 구성의 범위
-현재 ZETTY DB 구현은 MySQL이며 PostgreSQL은 향후 전환 방향이다. 스킬·에이전트 구성만 요청된 작업에서는 실행 코드·SQL·Compose·의존성·데이터를 변경하지 않는다. 위 절차의 구현·실행 단계는 해당 작업이 실제 요청된 경우에만 적용한다. 경로는 ZETTY 워크스페이스 기준이며 개별 clone에서는 자기 레포의 README와 실제 코드를 먼저 읽고 없는 형제 레포의 교차 검증만 미실행으로 남긴다.
+## 구조와 작업 범위
 
-## 구조 설계 참조
+[현재 선택한 구조와 작업 경계](../../references/system-design.md)를 먼저 읽는다. 목표는 서버 세션을 사용하는 단일 backend(네 Gradle 모듈, 실행 앱 하나)와 uba-analyzer, PostgreSQL이다. 실제 구현은 단계별로 확인한다. 기존 Auth/API/BFF·MySQL 코드를 목표 구조가 구현됐다는 증거로 쓰거나, 기존 JWT 기능을 반드시 보존할 목표로 취급하지 않는다.
 
-[시나리오 기반 구조 설계](../../references/system-design.md)를 구조 변경 계획에서는 현재 세 앱과 목표 여섯 모듈을 구분한다. 설계·지침 요청이면 해당 산출물과 검토에서 종료하고 구현·테스트 실행 체인으로 자동 확대하지 않는다.
+사용자와 변경 이유·흐름·대상 파일·검증 방법을 먼저 정하고 승인한 단계만 구현한다. 같은 범위의 승인을 반복 요청하지 않는다. 설계·문서·에이전트 구성 요청은 실행 코드·SQL·의존성·Compose·데이터 변경이나 서비스/공격/유료 API 실행 권한이 아니다. trust-chain-server 원본은 읽기 전용이다.
+
+경로는 워크스페이스 기준이다. 개별 clone에서는 자기 README와 실제 파일을 먼저 확인하고 없는 형제 레포가 필요한 검증만 미실행으로 남긴다. 삭제된 log-pipeline 런타임·계약·테스트를 복원하지 않는다. Java 전달 작업은 backend, Python 수신·집계·Jev·보고서는 uba-analyzer가 소유한다.
