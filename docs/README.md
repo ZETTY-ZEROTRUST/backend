@@ -1,12 +1,13 @@
-# Backend 문서 지도
+# Backend 설계 문서
 
-## 현재 구현
+2026-11-27 기준 서버 세션 backend 하나와 PostgreSQL, 별도 UBA를 목표로 한다. 현재 문서는 구현 계획이며 실행·성능 검증 완료를 뜻하지 않는다.
 
-- [backend README](../README.md): 세 앱 역할·빌드·검증 진입점.
-- [Compose 실행 구조](../../zero-trust-architecture/compose/README.md): 로컬 실행·컨테이너·TLS.
-- [이벤트 전달 구조](../../log-pipeline/pipeline/README.md): Outbox·Streams·ES와 재처리.
-- [인증·토큰 아키텍처](auth-token-architecture.md): 현재 BFF·Auth·API의 발급·검증·회수 경계.
-- [Swagger](swagger-guide.md): 로컬 API 문서 사용.
-- [STAR](star/README.md): B-01 실행 기반, BFF, JWT 강화, Outbox, 대응 집행, 캐시와 부하 측정.
+| 문서 | 내용 |
+|---|---|
+| [backend 소개](../README.md) | 역할·모듈·구현 순서 |
+| [인증·인가](auth-token-architecture.md) | 로그인·세션·현재 계정 상태·주문 소유권 |
+| [감사·전달](audit-event-design.md) | PostgreSQL 기록·JSONB·HTTP 수신 확인·재시도 |
+| [통합 설계안](architecture/session-backend-c4/proposal.html) | 디렉토리·실패 처리·전환 순서·근거 코드 |
+| [C1–C4 도면](architecture/session-backend-c4/index.html) | 시스템·컨테이너·컴포넌트·코드 구조 |
 
-현재 구현 여부는 실제 소스와 가까운 STAR 결과, Compose에서 확인한다.
+이전 구조의 STAR 기록·부하 측정 설명·Swagger 실행 가이드는 제거했다. 새 구현에서 직접 확인한 명령과 결과만 이후 문서에 추가한다.

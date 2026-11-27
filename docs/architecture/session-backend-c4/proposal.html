@@ -1,0 +1,152 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZETTY · 서버 세션·PostgreSQL 통합 설계안</title><style>body{font-family:system-ui,"Apple SD Gothic Neo",sans-serif;background:#f3f6fa;color:#172a3c;margin:0;line-height:1.8}main{max-width:1160px;margin:auto;padding:32px 24px}h1{font-size:30px}h2{font-size:23px;margin-top:32px}h3{font-size:18px}nav,.callout{padding:18px;background:#e5edf7;border-radius:8px}a{color:#135a9c}section{margin:26px 0;padding:26px;background:white;border:1px solid #dce4ee;border-radius:12px}img{display:block;width:100%;height:auto}li{margin:7px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#eef3f8;padding:20px;font-size:14px;line-height:1.65}code{font-family:ui-monospace,monospace}table{border-collapse:collapse;width:100%;margin:16px 0}th,td{padding:12px;text-align:left;vertical-align:top;border:1px solid #dce4ee}th{background:#edf3f9}small{color:#536273}@media print{section{break-before:page;border:0}nav{display:none}main{padding:0}}</style><main><h1>ZETTY · 서버 세션 backend 통합 설계안</h1>
+<p>2026-11-27 · PostgreSQL 선택 반영 · 구현 전</p>
+<p><a href="index.html">C1–C4 도면 7장 보기</a> · <a href="../zetty-session-c4.zip">설계안·원본·렌더링 다운로드</a></p>
+<div class="callout">확정 방향: 서버 세션을 사용하는 backend 하나, 별도 uba-analyzer, PostgreSQL.<br>이번 산출물: 도면과 설계 설명. Java/Python 코드, Gradle, Docker, DB는 변경하지 않았다. 일반 프로젝트 문서는 이 설계 기준으로 교체했다.<br>세부 제안: 로컬 PostgreSQL 인스턴스 하나에 앱별 DB·계정을 분리하고 기존 Redis는 세션에 사용한다. 보고서 열람은 우선 로컬 CLI로 제안한다.</div>
+<section><h2>1. 목표와 시스템 경계</h2>
+<p>고객 로그인 이후의 계정 탈취 의심 행동과 반복 주문 접근을 관측한다. backend는 인증·인가를 집행하고 사실을 기록한다. UBA는 실험 종료를 기다리지 않고 계속 수신·집계·분석한다. Jev 응답을 기다리며 고객 요청을 막지 않는다.</p>
+<pre>브라우저 / 허가된 시나리오 실행
+  → HTTPS Nginx → backend (Spring Boot JVM 하나)
+                    ├─ Redis: 세션
+                    ├─ PostgreSQL / zetty_backend: 사용자·주문·감사·전달 상태
+                    ├─ 파일: 운영 로그
+                    └─ HTTP 감사 전달 → uba-analyzer (Python 앱 하나)
+                                           ├─ PostgreSQL / zetty_uba
+                                           ├─ Jev HTTPS API
+                                           └─ 저장된 초동보고서</pre>
+<p>두 논리 DB는 로컬 PostgreSQL 인스턴스 하나를 공유한다. DB·계정 분리는 접근 권한 경계이며, 물리 장애나 DB 관리자 권한까지 격리하지는 않는다. UBA는 backend의 업무 DB·Redis 접근 권한을 받지 않는다. 수신 포트는 외부에 공개하지 않고 backend용 서비스 인증을 적용한다.</p>
+<p>내부 HTTP는 격리된 로컬 Docker 네트워크 가정이다. 외부 환경으로 배포할 때는 서비스 간 TLS와 비밀값 관리를 별도로 검토한다. 이 설계가 전체 제로트러스트 아키텍처를 구현했다는 뜻은 아니다. 인증·업무 통합으로 기존 프로세스 격리는 줄어든다.</p>
+</section>
+<section><h2>2. trust-chain-server에서 가져올 구조</h2>
+<p>실제 settings.gradle.kts에는 domain, application, infrastructure, bootstrap-app 4개 모듈이 포함되어 있다. 이를 따른다. 실행 JAR와 backend 컨테이너는 각각 하나이고, 나머지 모듈은 코드 라이브러리다.</p>
+<pre>backend/
+├── settings.gradle.kts / build.gradle.kts / gradlew / gradle/
+├── domain/src/main/java/com/zeti/domain/
+│   ├── identity/     # model/{entity,dto,event}, repository/, service/
+│   ├── order/        # 같은 책임별 패턴
+│   ├── address/
+│   ├── payment/
+│   ├── audit/        # AuditEvent, AuditService, 저장소·전달 포트
+│   └── shared/
+├── application/src/main/java/com/zeti/application/
+│   ├── identity/     # UserServiceImpl 등
+│   ├── order/        # OrderServiceImpl: 주문 소유권 검사
+│   ├── address/ / payment/
+│   └── audit/        # 감사 저장·재전송 처리
+├── infrastructure/src/main/java/com/zeti/infrastructure/
+│   ├── identity/persistence/
+│   ├── order/persistence/
+│   ├── address/persistence/ / payment/persistence/
+│   └── audit/
+│       ├── persistence/   # PostgreSQL 감사·전달 상태 접근
+│       └── client/        # UBA HTTP 호출
+└── bootstrap-app/src/main/
+    ├── java/com/zeti/bootstrap/
+    │   ├── ZettyApplication.java
+    │   ├── api/{identity,order,address,payment,mypage}/
+    │   │   └── controller/ · facade/ · command/ · result/
+    │   ├── security/      # Provider, 인증 주체, 현재 계정 상태 검사
+    │   ├── config/        # Security·Session·DB 설정
+    │   ├── support/{audit,error}/
+    │   └── job/           # 감사 전달 작업
+    └── resources/application.yml</pre>
+<table><tr><th>모듈</th><th>책임</th><th>의존 관계</th></tr>
+<tr><td>domain</td><td>업무 모델·DTO·서비스/저장소 인터페이스</td><td>다른 프로젝트 모듈을 모름</td></tr>
+<tr><td>application</td><td>업무 규칙·유스케이스 구현</td><td>domain</td></tr>
+<tr><td>infrastructure</td><td>PostgreSQL·외부 HTTP 어댑터</td><td>domain</td></tr>
+<tr><td>bootstrap-app</td><td>HTTP·보안·Facade·설정·스케줄·DI 연결</td><td>위 세 모듈</td></tr></table>
+<p>Controller는 HTTP 입출력, Facade는 인증 주체와 서비스 호출의 조합, Service는 업무 규칙을 맡는다. application이 infrastructure 구현체를 직접 참조하지 않는다. 원본의 테넌트·복잡한 RBAC·워크로드 JWT 기능은 이번 두 시나리오에 맞춰 가져오는 범위를 제한한다.</p>
+<pre>uba-analyzer/                       # 미래 구조 제안, 아직 생성하지 않음
+├── src/uba_analyzer/
+│   ├── main.py                      # HTTP 수신과 작업자 시작
+│   ├── receiver/                    # 서비스 인증·계약 검증·수신
+│   ├── analysis/                    # 시간 구간·이력·관측 맥락
+│   ├── jev/                         # API 호출·응답 검증
+│   ├── reports/                     # README 양식으로 구성·검증
+│   ├── persistence/                 # UBA 전용 PostgreSQL 접근
+│   └── jobs/                        # 영속 분석 작업 처리·재시도
+└── tests/</pre>
+<p>Java의 4계층 모듈 구조를 Python까지 기계적으로 복제하지 않는다. UBA의 HTTP 수신과 작업자는 한 앱에서 시작하되, 실행할 작업은 메모리 큐가 아니라 DB에 남긴다.</p>
+</section>
+<section><h2>3. 로그인과 세션 흐름</h2>
+<ol><li>AuthController가 로그인 요청을 검증하고 AuthFacade에 전달한다. 로그인 시도 제한과 계정 사용 가능 상태를 확인한다.</li>
+<li>AuthenticationManager → SessionLoginAuthenticationProvider가 사용자와 비밀번호 해시를 조회하여 자격을 검증한다. 잘못된 비밀번호와 미존재 계정은 외부에 구분해 노출하지 않는다.</li>
+<li>검증된 userId·권한·authVersion과 감사용 세션 식별자를 인증 주체에 담는다. 로그인 실패의 입력 ID를 검증된 사용자로 기록하지 않는다.</li>
+<li>SessionAuthenticationStrategy로 세션 고정을 방지하고 SecurityContextRepository로 인증 결과를 세션에 저장한다. Spring Session은 Redis에 세션을 보관한다.</li>
+<li>CSRF 토큰을 준비하고 로그인 결과를 감사 DB에 기록한다. 세션 저장·감사 저장 실패를 성공 로그인 응답으로 바꾸지 않는다.</li>
+<li>Secure·HttpOnly·SameSite 쿠키와 사용자 정보·CSRF 토큰을 응답한다. 브라우저용 AT/RT를 발급하지 않는다.</li></ol>
+<p>실제 세션 쿠키와 auditSessionKey는 별개다. 세션 ID가 교체되어도 필요한 감사 상관관계를 유지할 수 있도록 로그인 단위 식별자를 관리한다. 쿠키 원문을 로그나 UBA에 보내지 않는다.</p>
+<p>후속 보호 요청은 세션을 복원한 뒤 DB의 현재 계정 상태·authVersion을 검사한다. 잠금·탈퇴·전체 로그아웃 등으로 버전이 달라지면 기존 세션도 거부한다. 유휴 만료와 절대 만료를 구분하고, 로그아웃은 세션 무효화와 쿠키 제거를 수행한다. Redis/DB 오류를 인증 성공으로 처리하지 않는다.</p>
+<p>Redis와 PostgreSQL 사이에 원자적 커밋은 없다. 감사 실패 후 세션 정리, 세션의 실제 저장 시점, 응답 커밋 시점은 구현 때 통합 검증한다. 감사 기록의 성공이 브라우저 응답 수신이나 실제 사용자 신원까지 증명하지 않는다는 점도 구분한다.</p>
+</section>
+<section><h2>4. 주문 인가 흐름</h2>
+<pre>세션 복원 → 현재 계정 상태 확인
+  → OrderController → OrderFacade
+  → OrderService.getOwnedDetail(principal.userId, orderId)
+  → OrderRepository.findByOrderIdAndUserId(orderId, userId)
+     ├─ 조회됨: 감사 허용 기록 후 보호 응답
+     └─ 조회 안 됨: 감사 거부 기록 후 동일한 404 응답</pre>
+<p>현재 OrderService의 주문 ID와 userId를 함께 제한하는 원칙을 유지한다. userId는 요청 파라미터가 아니라 서버가 인증한 principal에서 얻는다. 거부 사유는 OBJECT_NOT_FOUND_OR_NOT_OWNED로 기록하여 주문 부재와 타인 소유를 임의로 구분하지 않는다. 모든 404를 인가 거부로 분류하지 않는다.</p>
+<p>업무 트랜잭션이 끝나거나 롤백된 뒤에도 거부 사실을 기록할 수 있도록 감사 저장 경계를 분리한다. 같은 클래스 내부 호출로 트랜잭션 어노테이션이 적용되지 않는 문제를 피하고, 별도 Spring 빈 경계를 사용한다. 감사 저장 실패 시 성공한 보호 응답 본문은 반환하지 않는 정책을 제안한다.</p>
+</section>
+<section><h2>5. 일반 로그·감사 기록·전달</h2>
+<table><tr><th>종류</th><th>경로</th><th>목적</th></tr>
+<tr><td>일반 로그</td><td>log.info/error → SLF4J → Logback → 마운트된 회전 파일</td><td>앱 상태·DB 오류·전달 장애. 개인정보·비밀값을 기록하지 않음</td></tr>
+<tr><td>감사 사실</td><td>인증·인가 결과 → AuditService → audit_events</td><td>발생 시각·주체·행위·대상·결과를 구조화</td></tr>
+<tr><td>전달 상태</td><td>동일 트랜잭션에서 audit_delivery 저장</td><td>미전달·재시도·ACK 관리. 원본 감사 행과 구분</td></tr></table>
+<p>trust-chain-server는 AuditRecordEvent → AFTER_COMMIT AuditHandler → @Async AuditFacade → AuditService → DB 흐름이다. 메모리 비동기 구간과 저장 실패 시 오류 로그만 남기는 부분은 그대로 복사하지 않는다. 제티는 분석 근거의 유실을 줄이기 위해 DB에 먼저 저장하고 전송을 재시도한다.</p>
+<pre>감사 사실 + PENDING 전달 상태를 PostgreSQL에 함께 커밋
+  → backend의 AuditDeliveryJob이 미전달 작업 조회
+  → 같은 event_id로 UBA HTTP 전송
+  → UBA가 이벤트 + 분석 작업을 자신의 DB에 함께 커밋
+  → 저장 확인 ACK
+  → backend 전달 상태를 ACKNOWLEDGED로 갱신</pre>
+<p>초기 전달 작업자는 1개다. 네트워크 호출 중 DB 트랜잭션을 잡아두지 않는다. UBA가 저장했지만 ACK가 유실되면 같은 event_id로 재전송한다. UBA는 이벤트와 분석 작업을 중복 생성하지 않는다. 같은 ID로 다른 내용이 오면 성공 처리하지 않고 계약 오류로 기록한다.</p>
+<p>일시 장애는 backoff 재시도, 잘못된 스키마·서비스 인증 실패 등은 오류 원인을 보존하고 운영자가 확인한다. 미전달 건수와 가장 오래된 대기 시간을 관측한다. 전송 완료 후에도 audit_events 원본은 보관 정책에 따라 유지한다.</p>
+<p>업무 변경과 감사가 함께 성공해야 하는 기능은 같은 PostgreSQL 트랜잭션에 참여시킨다. 거부·실패는 롤백되는 업무와 분리한 감사 트랜잭션을 사용한다. DB 자체가 불가용하면 영속 감사 기록도 보장할 수 없으므로 운영 오류를 남기고 성공을 가장하지 않는다.</p>
+</section>
+<section><h2>6. PostgreSQL을 선택한 이유와 데이터 형태</h2>
+<p>공통 필드는 관계형 컬럼으로 제약·검색하고, 이벤트별 추가 맥락은 JSONB로 저장한다. JSONB는 필요한 포함 조건·키 검색에 GIN 인덱스를 사용할 수 있어 조사 조건의 확장에 유리하다. 현재 두 시나리오의 기본 집계만으로 MySQL보다 빠르다고 주장하지는 않는다. <a href="https://www.postgresql.org/docs/current/datatype-json.html#JSON-INDEXING">PostgreSQL JSONB 공식 문서</a></p>
+<table><tr><th>저장 위치</th><th>테이블·필드 제안</th><th>설명</th></tr>
+<tr><td>zetty_backend</td><td>users, orders, order_items, addresses, payments 등</td><td>기존 업무 기능을 옮김. PostgreSQL 선택만으로 업무 기능을 삭제하지 않음</td></tr>
+<tr><td>zetty_backend.audit_events</td><td>event_id UUID, schema_version, occurred_at TIMESTAMPTZ, actor_key, audit_session_key, request_id, event_type, action, resource_key, outcome, reason, details JSONB</td><td>고유 ID·필수 값·허용 결과에 제약 적용. 원시 개인정보와 인증 자격 제외</td></tr>
+<tr><td>zetty_backend.audit_delivery</td><td>event_id, status, attempts, next_attempt_at, acknowledged_at, last_error_code</td><td>감사 사실과 분리한 변경 가능한 전달 상태</td></tr>
+<tr><td>zetty_uba</td><td>received_events, analysis_jobs, reports</td><td>event_id 중복 방지, received_at 별도 보관, 분석 종료 시각·버전·증거 참조 관리</td></tr></table>
+<p>처음에는 event_id 고유 인덱스, 사용자/세션과 발생 시각의 조회 인덱스, 미전달 작업 조회 인덱스부터 설계한다. GIN은 실제 JSON 검색 조건이 생기면 검토하고, 파티셔닝은 데이터 규모와 보관 작업이 요구할 때 추가한다. JSONB는 원래 JSON의 공백·키 순서까지 보존하는 원문 보관 형식이 아니다.</p>
+<p>앱 실행 계정과 마이그레이션 계정을 구분한다. 감사 원본은 실행 계정에 필요한 INSERT·조회 권한만 주고 UPDATE·DELETE를 제한한다. 전달 작업은 원본 조회와 전달 상태 갱신만 가능하도록 설계한다. UBA 계정에는 backend DB 권한을 주지 않는다. DB 소유자·관리자는 여전히 강한 권한을 가지므로 이 설계만으로 변조 불가능한 저장소가 되지는 않는다.</p>
+<p>보관 기간·백업·삭제 작업은 일반 파일 로그와 감사 기록별로 정한다. 참조 프로젝트의 파일 보관 일수를 법적 감사 보존 기간으로 그대로 사용하지 않는다.</p>
+</section>
+<section><h2>7. 두 시나리오에 필요한 관측과 UBA 처리</h2>
+<table><tr><th>시나리오</th><th>입력 기록</th><th>비교할 정상 설명</th></tr>
+<tr><td>로그인 이후 계정 탈취 의심</td><td>로그인 성공, 같은 감사 세션의 조회 순서·시간 차이, 접근 종류, 과거 계정 이용 이력</td><td>본인의 배송지 확인, 새 환경에서의 정상 이용. 관측이 같으면 실제 사용자 여부를 단정할 수 없음</td></tr>
+<tr><td>반복 주문 접근</td><td>허용·거부, 가명 대상별 고유 수, 동일 대상 재시도, 첫 거부 이후 행동, 자기 주문 조회 전후 흐름</td><td>계정 전환 후 오래된 탭 재접근. 거부된 주문이 실제 타인 소유였다고 단정하지 않음</td></tr></table>
+<p>HTTP 수신은 DB 저장까지만 완료하고 ACK한다. 작업자가 저장된 작업을 계속 읽어 짧은 관측 구간과 비교 가능한 과거 이력을 구성한다. 예를 들어 전송은 수초 간격, 분석은 수십 초 구간으로 시작할 수 있지만 이 값은 실측 전 가정이며 확정 SLA가 아니다.</p>
+<p>occurred_at과 received_at을 구분하고, 늦게 온 이벤트·관측 누락·이력 부족을 입력에 표시한다. 보고서에는 분석에 사용한 종료 시각, 근거 event_id, 집계 버전과 보고서 버전을 보관한다. 사후 정답·시나리오 ID는 Jev 입력에 넣지 않는다.</p>
+<p>Jev의 선택값과 지원되는 판정 정보를 검증해 관측 사실과 결합한다. 근거 참조·영향 범위·미확인 사항을 포함한 보고서는 UBA가 README의 내부 양식에 맞춰 구성한다. 자유 형식 보고서 생성이 Jev에서 제공된다고 가정하지 않으며 실제 API 계약은 구현 전에 확인한다.</p>
+<p>Jev 호출 실패나 필수 이벤트 누락은 미평가, 유효한 관측만으로 설명을 구분하기 어려운 경우는 근거 부족이다. 조회 성공, 개인정보 반환 확인, 외부 반출 확인은 서로 다른 사실이다. AI 결과만으로 계정을 자동 차단하지 않는다.</p>
+<p>UBA README는 두 시나리오와 PostgreSQL 수신·분석·보고서 흐름으로 정리했다. 현재 도면의 열람 경로는 로컬 CLI 제안이며 Slack 전달·담당자 인수 자동화는 최소 구현 범위에 포함하지 않았다.</p>
+</section>
+<section><h2>8. 현재 코드에서 옮길 것과 제거 후보</h2>
+<table><tr><th>현재</th><th>목표</th></tr>
+<tr><td>auth-server: 계정·비밀번호 검증</td><td>identity 서비스 + 세션 로그인 Provider로 이동</td></tr>
+<tr><td>api-server: 업무 API·주문 소유권 검사</td><td>해당 업무 모듈과 Facade로 이동</td></tr>
+<tr><td>bff-server: 쿠키·세션·CSRF·Origin</td><td>bootstrap-app 보안 설정으로 통합</td></tr>
+<tr><td>BFF의 Auth/API HTTP 중계</td><td>같은 JVM 내 서비스 호출</td></tr>
+<tr><td>AT/RT·JWT 서명·JWKS·발급대장·토큰 보관함·회전 조율</td><td>브라우저 서버 세션 범위에서 제거 후보. 새 인증 검증 후 정리</td></tr>
+<tr><td>JWT 서명 전용 KMS 연동</td><td>다른 사용처가 없는지 확인 후 제거 후보</td></tr>
+<tr><td>MySQL 드라이버·DDL·SQL·테스트·Compose</td><td>향후 승인된 PostgreSQL 전환 단계에서 변경. 이번에는 변경 없음</td></tr></table>
+<p>전환 시 AUTO_INCREMENT/identity, 시간 타입, JSON 매핑, 예약어, upsert, 대소문자·문자열 비교, 네이티브 SQL, 시퀀스와 테스트 데이터를 점검한다. 운영 DB를 덮어쓰지 않고 별도 PostgreSQL 환경에서 검증한다. 기존 데이터의 보존·이관·폐기 방식은 실제 DB 변경 전에 별도로 정한다.</p>
+</section>
+<section><h2>9. 함께 구현하고 확인할 순서</h2>
+<ol><li><b>구조:</b> 4개 Gradle 모듈과 실행 앱 1개를 만든 뒤 의존 관계와 bootJar를 확인한다.</li>
+<li><b>PostgreSQL:</b> 별도 로컬 DB와 계정을 준비하고 사용자 조회·비밀번호 해시 읽기부터 확인한다. 기존 MySQL 데이터는 이 단계에서 자동 삭제하지 않는다.</li>
+<li><b>세션 로그인:</b> Docker HTTP 요청의 Set-Cookie, Redis 세션, 다음 요청의 인증 복원을 함께 본다. CSRF·만료·로그아웃·계정 상태 변경도 확인한다.</li>
+<li><b>주문 인가:</b> 본인 주문 성공과 타인/미존재 주문 거부를 재현하고, 요청 userId 조작이 무시되는지 확인한다.</li>
+<li><b>로그·감사:</b> 일반 파일 로그와 PostgreSQL 행을 나란히 보고 request_id로 연결한다. 롤백·감사 저장 실패 시나리오를 확인한다.</li>
+<li><b>UBA 전달:</b> 수신 중단·재시작·ACK 유실·중복 전송·잘못된 이벤트를 시험한다. DB 저장 후 ACK와 중복 작업 방지를 확인한다.</li>
+<li><b>AI·보고서:</b> 합성 공격/정상 대조군으로 관측·Jev 입력·결과·보고서 근거를 확인하고 API 실패도 미평가로 남는지 본다.</li></ol>
+<p>각 단계는 변경 파일·이유·실제 요청 흐름을 먼저 설명하고 승인받은 범위만 구현한다. 이 문서의 검증 항목은 앞으로 수행할 계획이며 실행 결과가 아니다.</p>
+</section>
+<section><h2>10. 근거 코드와 이번 확인 범위</h2>
+<ul><li>trust-chain-server/settings.gradle.kts, docs/architecture.md: 4개 모듈과 계층 의존 관계.</li><li>trust-chain-server/bootstrap-app/.../api/identity/facade/AuthFacade.java: AuthenticationManager → 세션 ID 교체 → SecurityContext 저장 → CSRF → 감사 이벤트.</li><li>trust-chain-server/bootstrap-app/.../security/SessionLoginAuthenticationProvider.java: 계정 상태·비밀번호 검증과 인증 주체 생성.</li><li>trust-chain-server/bootstrap-app/.../api/audit/handler/AuditHandler.java 및 facade/AuditFacade.java: AFTER_COMMIT·비동기 감사 저장.</li><li>backend/api-server/.../order/application/OrderService.java: orderId와 userId를 함께 사용한 소유권 제한.</li><li>backend/bff-server/.../global/config/SessionConfig.java: Secure·HttpOnly·SameSite·__Host- 쿠키 설정.</li><li>uba-analyzer/README.md: 초동보고서 필드와 근거·미평가 구분.</li></ul>
+<p>도면 문법·PNG/SVG 산출물과 한글 배치를 검증한다. 애플리케이션 동작 테스트·DB 마이그레이션·Docker 재시작·실제 AI 호출은 이번 작업에 포함되지 않는다.</p>
+</section></main></html>

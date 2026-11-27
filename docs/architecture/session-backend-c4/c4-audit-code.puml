@@ -1,0 +1,89 @@
+@startuml
+!pragma layout smetana
+skinparam defaultFontName "Apple SD Gothic Neo"
+skinparam defaultFontSize 14
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam dpi 150
+left to right direction
+hide empty members
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam classBackgroundColor #EAF2F8
+skinparam classBorderColor #25638B
+skinparam ArrowColor #43576A
+skinparam nodesep 35
+skinparam ranksep 45
+title C4 · 감사 저장·전달 컴포넌트의 코드 구조\nPostgreSQL 설계안 · 제안 클래스
+package "domain · 포트와 모델" {
+ class AuditEvent <<immutable>> {
+   eventId / schemaVersion / occurredAt
+   actorKey / auditSessionKey / requestId
+   action / resourceKey / outcome / reason
+   details: event-specific data
+ }
+ interface AuditService {
+   +record(event)
+   +recordDenied(event)
+ }
+ interface AuditRepository {
+   +insertEvent(event)
+   +insertPendingDelivery(eventId)
+ }
+ interface AuditDeliveryService {
+   +deliverPendingBatch()
+ }
+ interface AuditDeliveryRepository {
+   +findDueBatch()
+   +markAcknowledged(eventId)
+   +scheduleRetry(eventId)
+ }
+ interface AuditReceiverClient {
+   +send(event): Receipt
+ }
+}
+package "application · 처리 규칙" {
+ class AuditServiceImpl {
+   +record(event)
+   +recordDenied(event)
+ }
+ class AuditDeliveryServiceImpl {
+   +deliverPendingBatch()
+ }
+}
+package "infrastructure · DB와 HTTP 구현" {
+ class PostgresAuditRepository {
+   JDBC / PostgreSQL
+   audit_events + audit_delivery
+ }
+ class PostgresAuditDeliveryRepository
+ class HttpAuditReceiverClient
+}
+package "bootstrap-app · 실행 진입점" {
+ class AuditDeliveryJob {
+   +tick()
+ }
+}
+AuditServiceImpl ..|> AuditService
+AuditServiceImpl --> AuditRepository : 이벤트·전달 대기 같은 트랜잭션
+AuditServiceImpl --> AuditEvent : 필드 검증
+PostgresAuditRepository ..|> AuditRepository
+AuditDeliveryJob --> AuditDeliveryService : 주기 실행
+AuditDeliveryServiceImpl ..|> AuditDeliveryService
+AuditDeliveryServiceImpl --> AuditDeliveryRepository : 작업 조회·결과 갱신
+AuditDeliveryServiceImpl --> AuditReceiverClient : ACK 확인
+PostgresAuditDeliveryRepository ..|> AuditDeliveryRepository
+HttpAuditReceiverClient ..|> AuditReceiverClient
+note bottom of AuditServiceImpl
+ 거부 기록은 업무 롤백과 분리해 저장.
+ 다른 Spring 빈을 통한 트랜잭션 경계 사용.
+ 감사 원본은 전달 완료 후에도 보존.
+ 공통 값은 컬럼, 추가 맥락은 JSONB로 매핑.
+end note
+note bottom of AuditDeliveryServiceImpl
+ 초기 구현: 전달 작업자 1개.
+ 네트워크 호출 중 DB 트랜잭션을 유지하지 않음.
+ 전송 후 종료되면 동일 eventId로 재전송.
+ 수신자는 중복 제거 후 저장 커밋 시 ACK.
+end note
+@enduml

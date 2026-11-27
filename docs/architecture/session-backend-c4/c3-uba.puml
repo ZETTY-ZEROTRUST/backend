@@ -1,0 +1,37 @@
+@startuml
+!pragma layout smetana
+skinparam defaultFontName "Apple SD Gothic Neo"
+skinparam defaultFontSize 14
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam dpi 150
+!include <C4/C4_Component>
+LAYOUT_TOP_DOWN()
+title C3 · uba-analyzer 내부 컴포넌트\nPostgreSQL 설계안 · 구현 전
+
+Container_Ext(backend, "backend 전달 작업", "Java", "감사 이벤트 전송·재시도")
+System_Ext(jev, "TypeSafe Jev", "AI 판정 API")
+Person(analyst, "분석 담당자", "조사 여부 확인")
+ContainerDb_Ext(store, "분석 저장소", "PostgreSQL / zetty_uba", "이벤트·분석 작업·이력·보고서")
+Container_Boundary(u, "uba-analyzer · 하나의 Python 앱") {
+ Component(receiver, "감사 이벤트 수신", "HTTP endpoint", "서비스 인증·스키마 검증·event_id 중복 제거")
+ Component(worker, "분석 작업 실행", "Background worker", "저장된 대기 작업 처리·재시도")
+ Component(context, "행동 맥락 구성", "Python", "시간 구간·과거 이용 이력·순서·고유 대상 수")
+ Component(client, "Jev 연동", "API client", "입력 최소화·타임아웃·응답 검증")
+ Component(report, "보고서 구성", "Template / validation", "관측 사실·AI 판정·근거 참조·미확인 사항")
+ Component(reader, "보고서 열람", "로컬 CLI · 제안", "저장된 결과 조회·내보내기")
+}
+Rel(backend, receiver, "감사 이벤트 / 커밋 후 ACK", "내부 HTTP")
+Rel(receiver, store, "이벤트 + 분석 대기 작업을 원자적으로 저장")
+Rel(worker, store, "대기 작업 조회·상태 갱신")
+Rel(worker, context, "분석 대상·관측 종료 시각 지정")
+Rel(context, store, "현재 관측 + 비교 가능한 과거 이력 조회")
+Rel(context, client, "가명 맥락·관측 누락·근거 ID")
+Rel(client, jev, "관측 기반 분석 요청", "HTTPS")
+Rel(worker, report, "관측 맥락 + 판정 / 실패 시 미평가 사유")
+Rel(report, store, "검증된 보고서·버전·근거 저장")
+Rel(analyst, reader, "결과 확인")
+Rel(reader, store, "보고서 조회")
+
+SHOW_LEGEND()
+@enduml

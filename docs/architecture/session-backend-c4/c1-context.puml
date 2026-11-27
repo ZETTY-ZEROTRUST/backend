@@ -1,0 +1,23 @@
+@startuml
+!pragma layout smetana
+skinparam defaultFontName "Apple SD Gothic Neo"
+skinparam defaultFontSize 14
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam dpi 150
+!include <C4/C4_Context>
+LAYOUT_TOP_DOWN()
+title C1 · ZETTY 시스템 맥락\nPostgreSQL 설계안 · 구현 전
+
+Person(customer, "고객", "로그인하고 자신의 주문·배송지·결제 이력 조회")
+Person(analyst, "분석 담당자", "근거와 정상 설명을 확인하고 조사 여부 결정")
+System(zetty, "ZETTY", "세션 인증·객체 인가·감사 기록과 AI 행동 분석")
+System_Ext(sim, "attack-simulation", "허가된 로컬 환경에서 공격·정상 대조군 재현")
+System_Ext(jev, "TypeSafe Jev", "가명 처리된 행동 맥락에 대한 AI 판정")
+Rel(customer, zetty, "로그인·업무 조회", "HTTPS")
+Rel(sim, zetty, "계정 탈취 의심 / 반복 주문 접근 시나리오", "HTTPS")
+Rel(zetty, jev, "관측값·과거 이력·근거 참조로 분석 요청", "HTTPS")
+Rel(analyst, zetty, "저장된 초동보고서와 증거 확인", "로컬 보고서 열람")
+
+SHOW_LEGEND()
+@enduml

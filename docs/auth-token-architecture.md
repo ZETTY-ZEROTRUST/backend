@@ -1,37 +1,51 @@
-# 현재 인증·인가·토큰 아키텍처
+# 서버 세션 인증·인가 설계
 
-> 2026-10-05 기준 로컬 Compose와 구현 코드. 구현·실행 기록은 [backend STAR](star/README.md), 이벤트 전달과 재처리는 [파이프라인](../../log-pipeline/pipeline/README.md)을 본다.
+2026-11-27 목표 설계. 기존 참조 경로를 유지하기 위해 파일명은 그대로 두었지만, 본문은 서버 세션 구조로 교체했다. Java 코드에는 아직 적용하지 않았다.
 
-## 요청 경계
+## 구조와 책임
 
 ```text
-브라우저 ──HTTPS·세션 쿠키──▶ nginx ──▶ BFF ──Bearer AT──▶ API
-                                        │                   │
-                                        └──로그인·갱신──▶ Auth │
-                                                          └──MySQL 원본 상태 검사
-Auth ──서명 요청──▶ 로컬 KMS     Auth/API ──SecurityEvent──▶ MySQL Outbox
+bootstrap-app: Controller → Facade → domain의 Service 인터페이스
+application:                          Service 구현
+infrastructure:                       domain의 Repository 구현 → PostgreSQL
 ```
 
-- [Compose nginx](../../zero-trust-architecture/compose/nginx/nginx.conf)는 TLS를 종료하고 경로를 라우팅하며 신뢰 헤더와 request ID를 다시 설정한다. `access_log off`이고 Filebeat는 현재 실행 구성에 없다.
-- [BFF](../bff-server/src/main/java/com/zeti/bff/login/BffAuthController.java)는 `/bff/login`에서 Auth에 로그인한 뒤 브라우저에 세션 쿠키와 CSRF 토큰만 준다. [Redis 공유 세션](../bff-server/src/main/java/com/zeti/bff/global/config/SessionConfig.java)과 [MySQL 암호화 토큰 vault](../bff-server/src/main/java/com/zeti/bff/vault/TokenVault.java)가 서버 쪽 상태를 보관한다. [프록시](../bff-server/src/main/java/com/zeti/bff/proxy/ApiProxyController.java)는 허용한 API 경로에만 AT를 붙인다.
-- [Auth](../auth-server/src/main/java/com/zeti/auth/identity/presentation/AuthController.java)는 로그인·AT/RT 발급·회전·폐기를 담당한다. 현재 경로는 JSON `/auth/login`과 `/auth/refresh`다. Authorization Code/OIDC 흐름으로 설명하지 않는다.
-- [API](../api-server/src/main/java/com/zeti/api/security/presentation/JwtAuthenticationFilter.java)는 Bearer AT를 검증한 뒤 서버가 만든 principal로 객체 소유권을 조회한다. 요청의 user ID나 미검증 JWT claim을 신원으로 쓰지 않는다.
+trust-chain-server의 AuthFacade와 SessionLoginAuthenticationProvider를 참고한다. 별도 Auth/BFF 배포 없이 bootstrap-app 하나를 실행한다. Python UBA는 독립 앱으로 둔다.
 
-## AT 발급과 검증
+## 로그인
 
-1. [JwtIssuer](../auth-server/src/main/java/com/zeti/auth/token/application/JwtIssuer.java)가 RS256 AT를 만들고 [KmsJwtSigner](../auth-server/src/main/java/com/zeti/auth/token/infrastructure/kms/KmsJwtSigner.java)가 로컬 KMS 에뮬레이터로 서명한다. 기본 AT 수명은 900초다. Auth만 서명 권한을 가진다.
-2. [TokenLedgerService](../auth-server/src/main/java/com/zeti/auth/token/application/TokenLedgerService.java)는 compact JWT의 SHA-256 digest·사용자·jti·kid·상태를 MySQL 발급대장에 저장한다. 이는 서명만 맞는 미발급 토큰을 거부하기 위한 원본이다.
-3. [JwtVerifier](../api-server/src/main/java/com/zeti/api/security/application/JwtVerifier.java)는 신뢰한 JWKS 공개키로 RS256 서명과 `kid`, `iss`, `aud`, `sub`, `jti`, 시간·수명을 검사한다.
-4. [AuthStateVerifier](../api-server/src/main/java/com/zeti/api/security/application/AuthStateVerifier.java)는 매 보호 요청의 대장 digest·ACTIVE·sub와 사용자 `authVersion`을 MySQL JOIN으로 확인한다. 기본 운영 설정에서 positive cache는 꺼져 있다. DB 검증 실패는 허용으로 바꾸지 않는다.
-5. 인증을 통과해도 객체 인가는 별도다. 예를 들어 [AddressRepository](../api-server/src/main/java/com/zeti/api/address/infrastructure/persistence/AddressRepository.java)의 객체 ID와 소유자 ID를 함께 조건으로 쓰는 조회가 다른 사용자의 주소를 막는다.
+1. 요청 검증과 로그인 시도 제한을 수행한다.
+2. AuthenticationManager가 Provider에 계정 상태·비밀번호 검증을 위임한다.
+3. 검증된 userId·권한·authVersion으로 인증 주체를 만든다. 감사용 세션 식별자는 실제 세션 쿠키와 별개다.
+4. SessionAuthenticationStrategy로 세션 고정을 방지하고 SecurityContextRepository로 인증 결과를 저장한다. Spring Session 저장소는 Redis다.
+5. CSRF 토큰을 준비하고 로그인 결과를 감사 DB에 저장한다.
+6. 세션 쿠키와 사용자 정보·CSRF 토큰을 응답한다. 브라우저용 Access/Refresh Token 발급은 목표 범위에 없다.
 
-## RT·브라우저 세션
+Redis와 PostgreSQL 사이의 원자적 커밋을 가정하지 않는다. 세션·감사 저장 실패 시 성공 응답을 내보내지 않고 생성된 인증 세션을 정리한다. 실제 세션 저장과 응답 커밋 시점은 통합 테스트로 확인한다.
 
-- [RefreshTokenService](../auth-server/src/main/java/com/zeti/auth/token/application/RefreshTokenService.java)는 RT 원문 대신 hash·family·generation·상태를 저장한다. 정상 갱신은 이전 RT를 소비하고 다음 세대를 발급한다. 소비된 RT 재사용은 family 폐기로 이어진다.
-- BFF는 [TokenRefreshCoordinator](../bff-server/src/main/java/com/zeti/bff/proxy/TokenRefreshCoordinator.java)로 갱신을 조율한다. [TokenVault](../bff-server/src/main/java/com/zeti/bff/vault/TokenVault.java)는 AT/RT를 서버 측에 보관하고 브라우저 응답에는 넣지 않는다.
-- BFF 세션 쿠키는 `__Host-zetty-session`이며 Secure·HttpOnly·SameSite=Lax다. [CSRF 토큰](../bff-server/src/main/java/com/zeti/bff/session/SessionBoundCsrfTokenRepository.java)과 Origin 검사, 제한된 프록시 경로를 함께 적용한다.
-- 키의 정상 회전과 compromised `kid`의 긴급 신뢰 철회는 다른 절차다. 공개키 캐시만 남은 채 개인키를 비활성화하는 것으로는 기존 AT 검증이 즉시 멈추지 않는다.
+## 후속 요청과 접근 회수
 
-## 감사·탐지로 이어지는 데이터
+- 세션을 복원한 뒤 현재 계정 상태와 authVersion을 확인한다. 잠금·탈퇴·전체 로그아웃으로 상태가 바뀐 세션은 거부한다.
+- Secure·HttpOnly·SameSite·__Host- 쿠키 조건과 상태 변경 요청의 CSRF·Origin 검증을 적용한다.
+- 유휴 만료와 절대 만료를 구분한다. 로그아웃은 서버 세션 무효화와 쿠키 제거를 수행한다.
+- 세션 저장소나 계정 상태 조회 장애를 인증 성공으로 처리하지 않는다.
 
-Auth/API는 검증이 끝난 신원과 판단 결과로 `security-event/2.0`을 생성한다. 업무 성공 이벤트는 업무와 같은 트랜잭션의 Outbox에, 실패·거부·조회 이벤트는 별도 저장 경계에 남긴다. 원문 JWT·RT·Cookie·password는 이벤트에 넣지 않는다. 전달은 **MySQL Outbox → Redis Streams → event-indexer → Elasticsearch**이고, ES에는 `event_id`를 문서 ID로 사용한다. 실패·재처리 규칙은 [파이프라인](../../log-pipeline/pipeline/README.md), payload는 [공통 계약](../../log-pipeline/contracts/README.md)을 본다.
+## 주문 객체 인가
+
+```text
+인증된 principal.userId + 요청 orderId
+  → OrderService
+  → findByOrderIdAndUserId(orderId, userId)
+     ├─ 있음: 허용 기록 후 주문 응답
+     └─ 없음: 거부 기록 후 404
+```
+
+주문이 없는 경우와 타인 소유인 경우는 `OBJECT_NOT_FOUND_OR_NOT_OWNED`로 기록한다. 이 사실만으로 실제 소유자를 추정하지 않는다. 일반 경로 오류의 404와 인가 거부를 구분한다.
+
+거부 감사는 업무 롤백과 분리해 저장한다. 감사 저장 실패 시 보호 응답 본문을 반환하지 않는 정책을 적용할 계획이다. 기록 성공이 브라우저 수신이나 외부 반출까지 증명하는 것은 아니다.
+
+## 확인할 동작
+
+로그인 성공·실패, 세션 ID 교체, CSRF 거부, 유휴·절대 만료, 로그아웃, 계정 상태 변경, 본인 주문 허용, 타인·미존재 주문 거부, 저장소 장애를 함께 확인한다. 아직 실행한 검증 결과는 아니다.
+
+[감사 이벤트 설계](audit-event-design.md) · [C4 로그인·인가 도면](architecture/session-backend-c4/index.html)

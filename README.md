@@ -1,77 +1,46 @@
 # ZETTY Backend
 
-Java 21·Spring Boot·Gradle 기반의 **Auth / API / BFF** 세 앱이다.
-현재 로컬 실행은 RS256·MySQL·Redis·KMS 에뮬레이터를 사용한다.
+서버 세션 인증·객체 인가·감사 기록을 담당하는 **Spring Boot 애플리케이션 하나**로 통합한다. 업무·감사 DB는 PostgreSQL, 세션 저장소는 Redis를 사용하고, 별도 Python 앱인 uba-analyzer에 감사 이벤트를 전달하는 설계다.
 
-## 앱 역할
+> 2026-11-27 설계 기준. 문서를 새 구조로 교체했으며 애플리케이션 전환은 아직 구현 전이다. 소스에는 기존 auth-server, api-server, bff-server가 남아 있다. 이 문서의 목표 구조를 현재 실행 상태로 해석하지 않는다.
 
-| 앱 | 포트(내부) | 주요 책임 |
-|---|---:|---|
-| auth-server | 8080 | 로그인, AT/RT, 발급대장, JWKS, 회수·대응 명령 |
-| api-server | 8081 | JWT·원본 상태·객체 소유권 확인, 업무 API, 감사 이벤트 |
-| bff-server | 8082 | 브라우저 세션·CSRF·vault·refresh·허용 proxy |
+## 목표 구조
 
-외부 진입은 형제 저장소 Compose의 nginx HTTPS 8443이다. management 포트는 내부 전용이다.
-브라우저는 세션 쿠키를 사용하며 AT/RT는 BFF 서버에서 보관한다.
-
-## 실행과 확인
-
-[현재 Compose 절차](../zero-trust-architecture/compose/README.md)를 따른다.
-기존 DB를 유지하는 환경에서는 새로운 secret으로 core를 재생성하지 않는다.
-
-```sh
-# ZETTY workspace 루트
-python3 ops/workspace.py status
-
-# 각 앱 디렉토리에서; JDK 21 필요
-./gradlew test bootJar
+```text
+브라우저 → Nginx HTTPS → backend
+                         ├─ Redis: 로그인 세션
+                         ├─ PostgreSQL: 업무·감사·전달 상태
+                         ├─ 파일: 일반 운영 로그
+                         └─ HTTP 감사 전달 → uba-analyzer → Jev → 보고서
 ```
 
-Swagger 사용은 [가이드](docs/swagger-guide.md), 인증 연결은 [인증·토큰 구조](docs/auth-token-architecture.md)를 본다.
-위 Gradle 명령은 실행 안내다. 이번 문서 정리에서 세 앱 전체 검사를 재실행한 기록은 아니다.
+| Gradle 모듈 | 책임 |
+|---|---|
+| domain | 모델·DTO·서비스 및 저장소 인터페이스 |
+| application | 업무 규칙과 유스케이스 구현 |
+| infrastructure | PostgreSQL 저장소·UBA HTTP 어댑터 |
+| bootstrap-app | Controller·Facade·보안·설정·스케줄·실행 진입점 |
 
-## 코드 구조
+4개 모듈을 하나의 실행 JAR와 컨테이너로 묶는다. trust-chain-server의 모듈 경계와 세션 로그인 흐름을 참고한다.
 
-각 앱의 `src/main/java/com/zeti/` 아래 책임별 패키지를 읽는다.
+## 인증·인가·감사
 
-- **Auth**: identity(로그인/계정), token(서명·RT·대장), response(대응 명령), securityevent(감사).
-- **API**: security(JWT·원본 상태), mypage(집계/캐시/bulkhead), user/address/order/payment(업무), securityevent(감사).
-- **BFF**: session(CSRF·Origin), vault(암호화 서버 토큰), proxy(refresh/허용 경로), upstream(Auth/API 호출).
+- 로그인 자격을 검증한 뒤 세션 ID를 교체하고 인증 정보를 서버 세션에 저장한다. CSRF·Origin 검사, 만료·로그아웃, 현재 계정 상태·인증 버전 확인을 유지한다.
+- 객체 인가는 인증된 사용자와 주문 소유자를 함께 조회한다. 클라이언트가 보낸 userId를 인증 주체로 사용하지 않는다.
+- 일반 로그는 회전 파일에 남긴다. 감사 사실과 전달 대기는 PostgreSQL에 함께 저장하고 UBA 저장 확인 후 전달 상태를 갱신한다.
+- UBA 장애는 재전송으로 처리한다. 감사 DB 장애를 정상 접근으로 숨기지 않는다. Jev 결과를 기다리며 사용자 요청을 처리하지 않는다.
 
-JWT 서명은 `auth-server/.../token/infrastructure/kms/KmsJwtSigner.java`의 RS256이다.
-API 원본 확인은 `api-server/.../security/application/AuthStateVerifier.java`의 단일 JOIN 쿼리다.
-TTL 조회 캐시와 보안 인가 상태 확인을 혼동하지 않는다.
+## 문서
 
-## 검증 시나리오
+- [문서 지도](docs/README.md)
+- [인증·인가 설계](docs/auth-token-architecture.md)
+- [감사 기록·이벤트 전달 설계](docs/audit-event-design.md)
+- [통합 설계안](docs/architecture/session-backend-c4/proposal.html)
+- [C1–C4 도면 7장](docs/architecture/session-backend-c4/index.html)
+- [PlantUML·PNG·SVG·설계안 묶음](docs/architecture/zetty-session-c4.zip)
 
-[attack-simulation v2](../attack-simulation/README.md)가 현행 검증 진입점이다.
+## 구현 순서
 
-- start: 잘못된 JWT/claim 거부.
-- S1: 객체 ID와 소유자 범위를 함께 확인.
-- S2: RT 회전·재사용 폐기·상태 회수.
-- S3: 미발급 토큰·서명키 신뢰 철회.
-- S4: 유효 토큰의 이상 사용을 행동으로 평가.
+모듈 구성 → 별도 PostgreSQL 환경 → 세션 로그인 → 주문 인가 → 파일·DB 감사 기록 → UBA 전달 → Jev 분석·보고서 순서로 진행한다. 각 단계의 파일과 동작을 먼저 설명하고 승인받은 범위만 구현한다.
 
-이 시나리오는 승인된 로컬 모의 계정 실험이다. 실제 사건의 내부 시스템·페이로드를 확인했다는 주장을 하지 않는다.
-
-## 이벤트·계약
-
-Auth/API가 [SecurityEvent v2](../log-pipeline/contracts/README.md)를 Outbox에 기록한다.
-[전달 파이프라인](../log-pipeline/pipeline/README.md)이 Streams→ES를 담당한다.
-schema revision 변경 시 `scripts/sync-contracts.sh`와 앱 ContractRevisionTest의 pin을 함께 확인한다.
-
-## 현재 코드와 측정 기록
-
-- [현행 문서 지도](docs/README.md)
-- [인증·토큰 아키텍처](docs/auth-token-architecture.md): 현재 BFF/Auth/API 경계.
-- [scripts 안내](scripts/README.md): 계약 동기화 명령.
-- [STAR 기록](docs/star/README.md): 구현·실측·철회/한계 기록.
-
-과거 위조 성공 기대값이나 raw-token 로그 경로는 현재 실행 기준이 아니다.
-모의 fixture 민감 응답을 실제 개인정보 데이터로 표현하지 않는다.
-
-## 보안·Git
-
-토큰·쿠키·비밀번호·개인키를 로그/결과/학습 입력에 저장하지 않는다.
-원본 사용자 ID 대신 검증된 가명 actor를 이벤트에 사용한다.
-Git commit/push는 별도 요청 범위에서 수행한다.
+새 Gradle 진입점·Compose 실행 명령·API 경로는 구현 후 실제 검증 결과에 맞춰 작성한다. 기존 스크립트는 [현재 상태](scripts/README.md)를 확인한다. 커밋·push는 별도 승인 범위다.
