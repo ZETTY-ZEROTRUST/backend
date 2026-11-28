@@ -26,6 +26,10 @@ backend/docs/audit-event-design.md, uba-analyzer/README.md와 실제 producer/co
 
 실제 schema/fixture가 있으면 양쪽 round trip, 저장 전 ACK 금지, 중복·내용 충돌·재시작·ACK 유실·지연 이벤트·관측 누락을 검증한다. PostgreSQL 제약/잠금은 실제 엔진으로 검사한다. mock만으로 영속성이나 실환경 통신 성공을 주장하지 않는다.
 
+## 참고 코드와 모니터링 적용
+
+[공통 기준](../../references/system-design.md)과 backend/docs/reference-adoption.md R14–R23, monitoring-design.md를 관련 범위에서 적용한다. request_id를 요청 진입에서 한 번 정해 파일/감사에 공유하고 event/job/attempt ID는 비동기 경계에 명시적으로 전달한다. occurred_at·recorded_at·received_at과 당시 actor/target을 보존한다. AFTER_COMMIT/fallbackExecution/Async/CallerRunsPolicy는 내구성 보장이 아니다. 단일 worker도 재시작·중복 스케줄·dispatch 거부·stuck 회수·늦은 완료 충돌을 검증한다. 배치/큐/재시도 상한과 짧은 SQL 경계를 정하고 SKIP LOCKED를 exactly-once로 표현하지 않는다. 일반 로그와 감사의 민감정보 통제를 각각 확인하고 backlog/oldest age/failure/last ACK 및 unknown을 관측한다. ACK·분석·보고서 완료를 분리한다.
+
 ## 구조와 작업 범위
 
 [현재 선택한 구조와 작업 경계](../../references/system-design.md)를 먼저 읽는다. 목표는 서버 세션을 사용하는 단일 backend(네 Gradle 모듈, 실행 앱 하나)와 uba-analyzer, PostgreSQL이다. 실제 구현은 단계별로 확인한다. 기존 Auth/API/BFF·MySQL 코드를 목표 구조가 구현됐다는 증거로 쓰거나, 기존 JWT 기능을 반드시 보존할 목표로 취급하지 않는다.

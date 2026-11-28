@@ -129,6 +129,10 @@ description: "ZETTY 테스트 실패를 원인 분석·수정·검토(최대 3�
 
 `$zetty-integration-test` 또는 `$zetty-build-change`가 현재 clone에 없으면 실제 owner의 검증 명령과 동일한 설계·구현·검토 단계를 주 세션에서 수행합니다. 다른 스킬이 실행됐다고 주장하지 않습니다.
 
+## 참고 코드와 모니터링 적용
+
+관측/전달 관련 실패는 backend/docs/monitoring-design.md와 설치된 공통 기준을 읽고 인증 거부·감사 저장 실패·전달 실패·분석 실패를 구분한다. Health UP으로 실패 테스트를 대체하지 않는다. 고정 Clock/필터 wiring/실제 PG·Redis·HTTP 중 어느 경계의 실패인지 보고하고, 이전 시도의 늦은 완료·CallerRunsPolicy·rollback·unknown을 정상으로 바꾸어 통과시키지 않는다. 승인된 변경의 실패 재현과 회귀만 수행하고 문서 수정에 무관한 런타임 검증을 추가하지 않는다.
+
 ## 구조와 작업 범위
 
 [현재 선택한 구조와 작업 경계](../../references/system-design.md)를 먼저 읽는다. 목표는 서버 세션을 사용하는 단일 backend(네 Gradle 모듈, 실행 앱 하나)와 uba-analyzer, PostgreSQL이다. 실제 구현은 단계별로 확인한다. 기존 Auth/API/BFF·MySQL 코드를 목표 구조가 구현됐다는 증거로 쓰거나, 기존 JWT 기능을 반드시 보존할 목표로 취급하지 않는다.

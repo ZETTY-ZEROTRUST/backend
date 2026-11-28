@@ -21,6 +21,10 @@ backend/README.md, backend/docs/auth-token-architecture.md와 변경 대상의 �
 
 변경 범위에 맞춰 정상/거부, CSRF, 세션 고정 방지, 만료·로그아웃·계정 회수, 소유권, 장애와 감사 누락을 검사한다. Java 21과 실제 Gradle task를 확인한다. 아직 없는 네 모듈이나 테스트를 실행했다고 보고하지 않는다. JWT·쿠키·비밀번호·키를 로그/fixture/prompt에 남기지 않는다.
 
+## 참고 코드와 모니터링 적용
+
+[공통 기준](../../references/system-design.md)의 참고 코드 적용·모니터링과 backend/docs/reference-adoption.md R07–R13을 해당 변경에 적용한다. 원본 JDBC 세션/Boot 버전 차이, 기능 권한과 객체 인가, 권한 캐시 지연, 권한/비밀번호 변경 뒤 실제 회수를 확인한다. IP/IP+계정 제한·잠금 DoS·실패 카운터 독립 저장/동시 갱신을 검토하고 원본 CSRF 예외를 무조건 복사하지 않는다. 서비스 Bearer 수신 인증은 사용자 세션/운영 조회 권한과 분리하며 배포 TLS·비밀값 교체/회수를 확인한다. 필수 저장소 장애의 readiness와 인증 거부, 공개 health의 상세 비노출을 함께 검증한다.
+
 ## 구조와 작업 범위
 
 [현재 선택한 구조와 작업 경계](../../references/system-design.md)를 먼저 읽는다. 목표는 서버 세션을 사용하는 단일 backend(네 Gradle 모듈, 실행 앱 하나)와 uba-analyzer, PostgreSQL이다. 실제 구현은 단계별로 확인한다. 기존 Auth/API/BFF·MySQL 코드를 목표 구조가 구현됐다는 증거로 쓰거나, 기존 JWT 기능을 반드시 보존할 목표로 취급하지 않는다.

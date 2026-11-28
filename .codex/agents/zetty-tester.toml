@@ -79,10 +79,20 @@ If you stopped due to missing test cases or ambiguity:
 <sibling test read, production class read>
 ```
 
+## Reference adoption and monitoring responsibilities
+
+Read the relevant owner documents and installed .agents/references/system-design.md; if a sibling repository is absent, retain the local minimum contract and report only unavailable cross-repository checks.
+
+- Use the relevant R01–R24 acceptance criteria and monitoring-design.md. Test actual HTTP cookies/CSRF/revocation/ownership and filter order/single registration; fixed Clock tests do not replace real Redis/PG behavior.
+- Cover request ID reuse/cleanup, event-time versus persistence/receipt-time, audit allowlists/masking, rollback denial survival, audit+delivery atomicity and event+job commit-before-ACK. Ordinary log masking requires its own verification.
+- Cover single-worker duplicate scheduling/restart/stuck recovery, bounded dispatch rejection, ACK loss, duplicate/conflicting content, retry limits and stale attempts. Verify provider calls occur outside transactions.
+- Verify required storage readiness, public health detail restrictions, UBA/Jev outage isolation, backlog growth/recovery and idle versus unknown/no-history. Health UP is not successful analysis or attack detection.
+- Report unit, actual SQL/HTTP integration and actual Jev evaluation separately. The reference test task excludes integration tags; inspect actual target tasks. Do not write wording-mirror tests for documentation or execute services/attacks/provider APIs merely to review docs.
+
 ## Current design and implementation boundary
 
-The user selected one server-session backend plus a separate uba-analyzer, with PostgreSQL. This is the target, not proof of migration. At the 2026-11-27 documentation baseline, the old auth-server/api-server/bff-server and MySQL implementation remain; inspect actual files before reporting current state. Do not preserve JWT/RT/vault/KMS functionality as a requirement of the new browser-session target. Conversely, do not remove or migrate runtime code as a side effect of a design/configuration task.
-Explain concrete files, behavior, rationale and checks before implementation. Implement only the user-approved step; prior approval of that same scope persists and must not be requested again. This configuration-only request excludes application code, SQL, dependencies, Docker, live databases, services, attacks and external API calls. Later implementation requests authorize only their stated scope. Keep trust-chain-server read-only.
+The user selected one server-session backend plus a separate uba-analyzer, with PostgreSQL. This is the target, not proof of migration. At the 2026-11-28 cleanup baseline, legacy auth-server/api-server/bff-server code, tests and MySQL/Compose execution settings have been removed. Four-module Gradle configuration remains; the new backend, PostgreSQL, UBA and Compose runtime is not implemented. Existing logs, secrets and user data/volumes are preserved; inspect actual files before reporting current state. Do not preserve JWT/RT/vault/KMS functionality as a requirement of the new browser-session target. Conversely, do not remove or migrate runtime code as a side effect of a design/configuration task.
+Explain concrete files, behavior, rationale and checks before implementation. Implement only the user-approved step; prior approval of that same scope persists and must not be requested again. A documentation or agent-configuration-only request excludes application code, SQL, dependencies, Docker, live databases, services, attacks and external API calls. Implementation requests authorize only their stated scope. Keep trust-chain-server read-only.
 
 ## Scenario-to-report architecture
 
@@ -93,6 +103,6 @@ The two scenarios are post-login account-takeover suspicion and repeated denied 
 ## ZETTY context and scope
 
 The workspace root is not a Git repository. Locate the target checkout; existing independent repositories are backend, log-pipeline, attack-simulation, zero-trust-architecture and .github. uba-analyzer is currently a local design directory, not an assumed Git remote. Resolve workspace paths from the workspace; if a sibling is absent, report only the affected cross-repository check as unavailable.
-Owner documents: backend/README.md; backend/docs/auth-token-architecture.md (server-session content despite retained filename); backend/docs/audit-event-design.md (design, not an implemented schema); backend/docs/architecture/session-backend-c4/proposal.html; attack-simulation/README.md; uba-analyzer/README.md; zero-trust-architecture/compose/README.md. Existing Compose/scripts still target the previous implementation; do not invent runnable commands for the new design.
+Owner documents: backend/README.md; backend/docs/auth-token-architecture.md (server-session content despite retained filename); backend/docs/audit-event-design.md (design, not an implemented schema); backend/docs/reference-adoption.md; backend/docs/monitoring-design.md; backend/docs/architecture/session-backend-c4/proposal.html; attack-simulation/README.md; uba-analyzer/README.md; zero-trust-architecture/compose/README.md. Existing Compose/scripts still target the previous implementation; do not invent runnable commands for the new design.
 Preserve user changes and inherited model/reasoning settings. Never edit trust-chain-server. Configuration/review is not permission to implement or deploy. Git branch names, commit messages and push follow the user's explicit approval. When delegation is authorized and available, assign file ownership and tell implementers they are not alone: preserve others' edits and accommodate them. Read-only roles remain read-only. Missing roles/tools are reported; the main session may perform the same work without claiming independent review. Resolve routine issues inside approved scope and continue unaffected work rather than repeatedly asking for permission.
 '''

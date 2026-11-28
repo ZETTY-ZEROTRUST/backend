@@ -26,7 +26,7 @@ description: "승인된 ZETTY 로컬 통합 테스트를 실제 owner 절차에 
 - backend: 실제 존재하는 변경 모듈 테스트. PostgreSQL SQL·잠금·중복 계약은 승인된 전용 PostgreSQL에서 검증한다.
 - uba-analyzer: 실제 구현된 수신·멱등성·집계·분석·보고서 테스트와 선택자. README만 있으면 실행 미구현으로 보고한다.
 - attack-simulation: `README.md`의 현재 두 시나리오와 앞으로 구현될 실제 runner. 삭제된 `scenarios/v2/`·`load/`를 실행 경로로 안내하지 않는다. 정의만 있고 runner가 없으면 실행 미구현으로 보고한다.
-- Compose: `compose/README.md`와 local-runtime-design.md를 대조한다. 남은 기존 Compose를 새 구조의 검증으로 실행하지 않는다. 새 구성이 없으면 해당 검증은 SKIP이다.
+- Compose: `compose/README.md`와 local-runtime-design.md를 대조한다. 구형 Compose는 제거했으며 새 구성이 없으면 해당 검증은 SKIP이다.
 
 서로 다른 실행 대상 중 선택이 필요한 경우에만 사용 가능한 질문 도구 또는 일반 질문으로 필요한 범위를 확인합니다. 이미 지정된 케이스를 재확인하지 않습니다.
 
@@ -105,6 +105,10 @@ FAIL이 있으면 `docker logs <컨테이너>`의 관련 구간에서 비밀·�
 - 수정 요청이 있으면 설치된 `$zetty-fix-test-failure`를 적용. 스킬이 없으면 같은 원인 분석→제한된 수정/검토→실패 케이스 재검증 절차를 주 세션에서 수행하고 독립 검토 여부를 보고.
 ## ZETTY 실행 제한
 요청에 케이스·범위가 명시되면 다시 묻지 않는다. 불명확할 때만 필요한 범위를 확인한다. local allowlist·모의 계정·요청 수·기간·종료 조건을 확인한다. 자신이 만든 일회용 자원만 정리한다. JWT/쿠키/비밀번호/키/업무 본문은 실패 보고에서 제거한다.
+
+## 참고 코드와 모니터링 적용
+
+backend/docs/reference-adoption.md R24와 monitoring-design.md의 해당 인수 기준을 사용한다. 실제 HTTP 쿠키·CSRF·세션 회수·객체 인가 및 필터 순서/중복, 실제 PG의 원자성/거부 rollback/권한, 요청 ID·시각 연결을 검사한다. 단일 worker의 중단/재시작·포화·늦은 완료·ACK 유실, UBA/Jev 중단 중 수신/기록과 복구 후 대기 해소를 구분한다. required DB/Redis readiness, 공개 health 상세 비노출, idle/unknown/no-history를 검사한다. unit/integration/실제 모델 평가를 별도로 보고한다. 실제 task/환경과 승인 범위가 없으면 해당 항목만 SKIP하며 문서 요청으로 서비스를 실행하지 않는다.
 
 ## 구조와 작업 범위
 

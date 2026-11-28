@@ -83,7 +83,7 @@ PostgreSQL은 선택된 목표 DB다. 공통 감사 값은 정형 컬럼으로, 
 - Introducing a migration framework into a narrowly scoped review without an identified need; review the existing schema initialization and migration procedure first.
 - Assuming a PostgreSQL runtime/version has already been selected or deployed; verify the future implementation target before recommending version-specific features.
 - Recommending denormalization without a measured performance reason.
-- Changing identity generation or integer width without checking the schema owner, seed behavior and JDBC generated-key use. Current MySQL uses BIGINT auto-increment keys; choose future PostgreSQL generation modes explicitly and preserve external identifiers.
+- Changing identity generation or integer width without checking the schema owner, seed behavior and JDBC generated-key use. Choose PostgreSQL generation modes explicitly and preserve external identifiers when retained data is migrated; no current application schema is implemented.
 - Changing existing identifiers without a compatibility plan.
 - Generic advice not grounded in the actual schema or query under review.
 
@@ -139,10 +139,19 @@ If the artifact is unclear or you need EXPLAIN output to proceed:
 <actual schema/migration sections read, entities scanned>
 ```
 
+## Reference adoption and monitoring responsibilities
+
+Read the relevant owner documents and installed .agents/references/system-design.md; if a sibling repository is absent, retain the local minimum contract and report only unavailable cross-repository checks.
+
+- Review R15–R21: occurred/recorded/received time semantics, immutable audit facts plus mutable delivery status, actual INSERT/read versus UPDATE/retention/DDL privileges, typed common fields and bounded JSONB. Do not copy the reference's blanket FK removal or partitioned composite PK without requirements.
+- Even one worker needs crash/restart and duplicate scheduling recovery. Review short claim/complete transactions, conditional state/attempt updates, dispatch rejection recovery, retry limits and stale completion races. SKIP LOCKED is not exactly-once and must not be used for authorization reads.
+- Check independent denial audit versus atomic business+audit work, transaction abort handling, no network/provider work in SQL transactions, keyset tie-breaking, bounded parameterized queries and evidence from actual PostgreSQL. Do not run DB checks without the assigned authorized environment.
+- Review backlog/oldest-age queries without mutating data; an unavailable DB must produce unknown rather than zero healthy backlog. Runtime health and reported audit/delivery counts must reflect separate stores/permissions.
+
 ## Current design and implementation boundary
 
-The user selected one server-session backend plus a separate uba-analyzer, with PostgreSQL. This is the target, not proof of migration. At the 2026-11-27 documentation baseline, the old auth-server/api-server/bff-server and MySQL implementation remain; inspect actual files before reporting current state. Do not preserve JWT/RT/vault/KMS functionality as a requirement of the new browser-session target. Conversely, do not remove or migrate runtime code as a side effect of a design/configuration task.
-Explain concrete files, behavior, rationale and checks before implementation. Implement only the user-approved step; prior approval of that same scope persists and must not be requested again. This configuration-only request excludes application code, SQL, dependencies, Docker, live databases, services, attacks and external API calls. Later implementation requests authorize only their stated scope. Keep trust-chain-server read-only.
+The user selected one server-session backend plus a separate uba-analyzer, with PostgreSQL. This is the target, not proof of migration. At the 2026-11-28 cleanup baseline, legacy auth-server/api-server/bff-server code, tests and MySQL/Compose execution settings have been removed. Four-module Gradle configuration remains; the new backend, PostgreSQL, UBA and Compose runtime is not implemented. Existing logs, secrets and user data/volumes are preserved; inspect actual files before reporting current state. Do not preserve JWT/RT/vault/KMS functionality as a requirement of the new browser-session target. Conversely, do not remove or migrate runtime code as a side effect of a design/configuration task.
+Explain concrete files, behavior, rationale and checks before implementation. Implement only the user-approved step; prior approval of that same scope persists and must not be requested again. A documentation or agent-configuration-only request excludes application code, SQL, dependencies, Docker, live databases, services, attacks and external API calls. Implementation requests authorize only their stated scope. Keep trust-chain-server read-only.
 
 ## Scenario-to-report architecture
 
@@ -153,6 +162,6 @@ The two scenarios are post-login account-takeover suspicion and repeated denied 
 ## ZETTY context and scope
 
 The workspace root is not a Git repository. Locate the target checkout; existing independent repositories are backend, log-pipeline, attack-simulation, zero-trust-architecture and .github. uba-analyzer is currently a local design directory, not an assumed Git remote. Resolve workspace paths from the workspace; if a sibling is absent, report only the affected cross-repository check as unavailable.
-Owner documents: backend/README.md; backend/docs/auth-token-architecture.md (server-session content despite retained filename); backend/docs/audit-event-design.md (design, not an implemented schema); backend/docs/architecture/session-backend-c4/proposal.html; attack-simulation/README.md; uba-analyzer/README.md; zero-trust-architecture/compose/README.md. Existing Compose/scripts still target the previous implementation; do not invent runnable commands for the new design.
+Owner documents: backend/README.md; backend/docs/auth-token-architecture.md (server-session content despite retained filename); backend/docs/audit-event-design.md (design, not an implemented schema); backend/docs/reference-adoption.md; backend/docs/monitoring-design.md; backend/docs/architecture/session-backend-c4/proposal.html; attack-simulation/README.md; uba-analyzer/README.md; zero-trust-architecture/compose/README.md. Existing Compose/scripts still target the previous implementation; do not invent runnable commands for the new design.
 Preserve user changes and inherited model/reasoning settings. Never edit trust-chain-server. Configuration/review is not permission to implement or deploy. Git branch names, commit messages and push follow the user's explicit approval. When delegation is authorized and available, assign file ownership and tell implementers they are not alone: preserve others' edits and accommodate them. Read-only roles remain read-only. Missing roles/tools are reported; the main session may perform the same work without claiming independent review. Resolve routine issues inside approved scope and continue unaffected work rather than repeatedly asking for permission.
 '''
