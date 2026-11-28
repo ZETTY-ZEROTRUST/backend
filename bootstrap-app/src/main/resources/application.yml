@@ -10,3 +10,11 @@ logging:
   level:
     root: INFO
     com.zeti: INFO
+  file:
+    name: ${ZETTY_LOG_FILE:logs/zetty-backend.log}
+  logback:
+    rollingpolicy:
+      file-name-pattern: ${ZETTY_LOG_FILE:logs/zetty-backend.log}.%d{yyyy-MM-dd}.%i.gz
+      max-file-size: 100MB
+      max-history: 30
+      total-size-cap: 3GB
