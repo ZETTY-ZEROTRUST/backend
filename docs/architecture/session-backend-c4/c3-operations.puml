@@ -1,0 +1,35 @@
+@startuml
+!pragma layout smetana
+skinparam defaultFontName "Apple SD Gothic Neo"
+skinparam defaultFontSize 14
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam dpi 140
+!include <C4/C4_Component>
+LAYOUT_TOP_DOWN()
+title C3 · 운영 관측 확대도\n같은 backend·UBA 내부 기능 / 별도 모니터링 서버 없음
+Person(operator, "운영 담당자", "내부 조회 / 최소 CLI 안")
+ContainerDb_Ext(bdb, "backend DB·세션", "PostgreSQL / Redis", "요청 처리의 필수 저장소")
+ContainerDb_Ext(udb, "UBA DB", "PostgreSQL", "수신·분석 작업·보고서")
+ContainerDb_Ext(logs, "앱별 로그 디렉토리", "분리된 회전 파일", "ID 연계·오류 마스킹·보존/용량 제한")
+Container_Boundary(b, "backend · 동일 JVM") {
+ Component(bhealth, "상태 확인", "Actuator 목표", "liveness: 프로세스\nreadiness: 앱·PG·Redis")
+ Component(bprogress, "감사·전달 진행 관측", "내부 운영 조회 안", "감사 저장 실패·대기 수/최장 대기\n재시도·영구 실패·최종 ACK")
+}
+Container_Boundary(u, "uba-analyzer · 동일 Python 앱") {
+ Component(uhealth, "수신 상태 확인", "내부 health 안", "앱·인증 설정·UBA DB\nJev 가용성과 수신 준비 분리")
+ Component(uprogress, "수신·분석 진행 관측", "내부 운영 조회 안", "중복/충돌·작업 대기/실패\nJev 소요/실패·보고서 최종 성공")
+}
+Rel(operator, bhealth, "상태 확인 / 공개 시 최소 정보")
+Rel(operator, bprogress, "별도 운영 권한")
+Rel(operator, uhealth, "내부 상태 확인")
+Rel(operator, uprogress, "별도 운영 권한")
+Rel(bhealth, bdb, "필수 의존성 확인")
+Rel(bprogress, bdb, "전달 상태 읽기 / 조회 실패는 unknown")
+Rel(uhealth, udb, "저장소 확인")
+Rel(uprogress, udb, "수신·작업·보고서 상태 읽기")
+Rel(bprogress, logs, "backend 오류·이벤트/시도 연계")
+Rel(uprogress, logs, "UBA 오류·작업/시도 연계")
+caption Health UP ≠ 전달 완료 ≠ 보고서 완료 / UBA·Jev 장애로 backend liveness를 실패시키지 않음\n유휴·unknown·성공 이력 없음 구분 / 신원·IP·event_id를 메트릭 label로 사용하지 않음
+SHOW_LEGEND()
+@enduml

@@ -4,7 +4,7 @@ skinparam defaultFontName "Apple SD Gothic Neo"
 skinparam defaultFontSize 14
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
-skinparam dpi 150
+skinparam dpi 140
 left to right direction
 hide empty members
 skinparam classAttributeIconSize 0
@@ -14,12 +14,14 @@ skinparam classBorderColor #25638B
 skinparam ArrowColor #43576A
 skinparam nodesep 35
 skinparam ranksep 45
-title C4 · 감사 저장·전달 컴포넌트의 코드 구조\nPostgreSQL 설계안 · 제안 클래스
+title C4 · 감사 저장·전달 컴포넌트의 코드 구조\n2026-11-28 · 제안 클래스 / 아직 구현 전
 package "domain · 포트와 모델" {
  class AuditEvent <<immutable>> {
-   eventId / schemaVersion / occurredAt
+   eventId / schemaVersion
+   occurredAt / recordedAt
    actorKey / auditSessionKey / requestId
-   action / resourceKey / outcome / reason
+   eventType / action / resourceKey
+   outcome / reason
    details: event-specific data
  }
  interface AuditService {
@@ -34,9 +36,10 @@ package "domain · 포트와 모델" {
    +deliverPendingBatch()
  }
  interface AuditDeliveryRepository {
-   +findDueBatch()
-   +markAcknowledged(eventId)
-   +scheduleRetry(eventId)
+   +claimDueBatch(limit): attemptId
+   +recoverInterruptedAttempts()
+   +markAcknowledgedIfCurrent(eventId, attemptId)
+   +retryOrFailIfCurrent(eventId, attemptId)
  }
  interface AuditReceiverClient {
    +send(event): Receipt
@@ -70,20 +73,26 @@ AuditServiceImpl --> AuditEvent : 필드 검증
 PostgresAuditRepository ..|> AuditRepository
 AuditDeliveryJob --> AuditDeliveryService : 주기 실행
 AuditDeliveryServiceImpl ..|> AuditDeliveryService
-AuditDeliveryServiceImpl --> AuditDeliveryRepository : 작업 조회·결과 갱신
+AuditDeliveryServiceImpl --> AuditDeliveryRepository : 짧은 선점·복구·조건부 완료
 AuditDeliveryServiceImpl --> AuditReceiverClient : ACK 확인
 PostgresAuditDeliveryRepository ..|> AuditDeliveryRepository
 HttpAuditReceiverClient ..|> AuditReceiverClient
 note bottom of AuditServiceImpl
  거부 기록은 업무 롤백과 분리해 저장.
  다른 Spring 빈을 통한 트랜잭션 경계 사용.
+ AFTER_COMMIT·메모리 Async만으로 보존하지 않음.
+ 요청 ID·당시 관측·발생/기록 시각을 보존.
  감사 원본은 전달 완료 후에도 보존.
  공통 값은 컬럼, 추가 맥락은 JSONB로 매핑.
 end note
 note bottom of AuditDeliveryServiceImpl
- 초기 구현: 전달 작업자 1개.
+ 초기 구현: 전달 작업자 1개 / 배치·큐 상한.
+ dispatch 거부·중단 복구·재시도 상한을 정의.
+ 늦은 이전 시도의 완료가 새 상태를 덮어쓰지 않음.
  네트워크 호출 중 DB 트랜잭션을 유지하지 않음.
  전송 후 종료되면 동일 eventId로 재전송.
- 수신자는 중복 제거 후 저장 커밋 시 ACK.
+ 수신자는 이벤트+작업 커밋 후 ACK / 보고서 완료 아님.
+ 받은 received_at은 수신측 메타데이터 / payload 비교 제외.
+ 대기 수·최장 대기·실패·최종 ACK 관측.
 end note
 @enduml

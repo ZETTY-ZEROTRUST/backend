@@ -4,33 +4,34 @@ skinparam defaultFontName "Apple SD Gothic Neo"
 skinparam defaultFontSize 14
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
-skinparam dpi 150
+skinparam dpi 140
 !include <C4/C4_Container>
 LAYOUT_TOP_DOWN()
-title C2 · 실행 앱과 저장소\nPostgreSQL 설계안 · 구현 전
-
+title C2 · 실행 앱과 저장소\n2026-11-28 · 목표 설계 / 런타임 전환 전
 Person(user, "고객 / 시나리오 실행자", "세션 기반 업무 요청")
-Person(analyst, "분석 담당자", "로컬 보고서 확인")
-System_Ext(jev, "TypeSafe Jev", "AI 판정")
-System_Boundary(z, "ZETTY") {
- Container(nginx, "진입점", "Nginx", "HTTPS 종료·backend로 전달")
- Container(backend, "backend", "Java / Spring Boot", "하나의 JVM: 인증·인가·업무·감사 저장·전송")
- ContainerDb(redis, "로그인 세션", "Redis / Spring Session", "인증 주체·만료·CSRF 관련 세션 상태")
- ContainerDb(db, "업무·감사 DB", "PostgreSQL / zetty_backend", "사용자·주문 / audit_events(JSONB) / audit_delivery")
- ContainerDb(logs, "일반 로그 파일", "마운트된 디렉토리", "운영·오류 로그 / 파일 회전")
- Container(uba, "uba-analyzer", "Python", "수신·집계·Jev 호출·보고서 / 지속 실행")
- ContainerDb(store, "분석 저장소", "PostgreSQL / zetty_uba", "수신 이벤트·분석 작업·이력·보고서")
+Person(operator, "운영·분석 담당자", "내부 권한으로 상태·보고서 확인")
+System_Ext(jev, "TypeSafe Jev", "외부 AI 분석 / API 계약 확인 필요")
+System_Boundary(z, "ZETTY · 로컬 실행 경계") {
+ Container(nginx, "진입점", "Nginx", "HTTPS 종료·신뢰 프록시 경계")
+ Container(backend, "backend", "Java / Spring Boot · JVM 1개", "세션·객체 인가·감사 저장·전달\nHealth·전달 진행 관측")
+ Container(uba, "uba-analyzer", "Python · 앱 1개", "수신·지속 분석·Jev·보고서\n수신 Health·분석 진행 관측")
+ ContainerDb(redis, "로그인 세션", "Redis / Spring Session", "검증된 인증 주체·세션 상태·만료")
+ ContainerDb(db, "업무·감사 DB", "PostgreSQL / zetty_backend", "사용자·주문 / audit_events / audit_delivery")
+ ContainerDb(store, "분석 DB", "PostgreSQL / zetty_uba", "received_events / analysis_jobs / reports")
+ ContainerDb(blog, "backend 일반 로그", "마운트된 디렉토리", "회전 파일·마스킹 / 요청·이벤트·시도 연계")
+ ContainerDb(ulog, "UBA 일반 로그", "마운트된 디렉토리", "회전 파일·마스킹 / 작업·Jev·저장 오류")
 }
-Rel(user, nginx, "세션 쿠키 / 변경 요청의 CSRF 토큰", "HTTPS")
-Rel(nginx, backend, "신뢰 경계를 제한한 요청 전달", "내부 HTTP")
-Rel(backend, redis, "세션 저장·복원·만료", "Redis protocol")
-Rel(backend, db, "업무 조회 / 감사·전달 대기 저장", "SQL")
-Rel(backend, logs, "SLF4J → Logback", "파일 쓰기")
-Rel(backend, uba, "감사 이벤트 재시도 전송 / 저장 후 ACK", "내부 HTTP + 서비스 인증")
-Rel(uba, store, "이벤트 중복 제거·작업·보고서 저장", "SQL / UBA 전용 계정")
-Rel(uba, jev, "최소화한 관측 맥락 / 판정 수신", "HTTPS")
-Rel(analyst, uba, "보고서 조회·내보내기", "로컬 CLI · 제안")
-
-caption 로컬 PostgreSQL 인스턴스 1개 · 논리 DB 2개 · 앱별 계정과 권한 분리\nUBA는 backend 업무 DB에 직접 접근하지 않음
+Rel(user, nginx, "세션 쿠키·CSRF / 로그인·조회", "HTTPS")
+Rel(nginx, backend, "요청·제한된 전달 헤더", "내부 HTTP")
+Rel(backend, redis, "세션 저장·복원·회수", "Redis protocol")
+Rel(backend, db, "업무·감사+전달 대기 저장", "SQL / backend 계정")
+Rel(backend, blog, "SLF4J → Logback", "파일 쓰기")
+Rel(backend, uba, "감사 이벤트 / DB 커밋 후 ACK", "서비스 Bearer / 로컬 HTTP¹")
+Rel(uba, store, "멱등 수신·작업·보고서", "SQL / UBA 계정")
+Rel(uba, ulog, "운영·실패 기록", "파일 쓰기")
+Rel(uba, jev, "관측 맥락 / 검증할 분석 결과", "HTTPS")
+Rel(operator, backend, "Health·전달 대기/실패", "내부 운영 조회 안")
+Rel(operator, uba, "수신/분석 상태·보고서", "내부 조회 / 로컬 CLI 안")
+caption ¹ 격리된 로컬·모의 자격증명만 HTTP / 실제 배포 Bearer는 TLS\nPostgreSQL 인스턴스 1개·논리 DB/계정 분리 / UBA는 backend DB·Redis에 접근하지 않음
 SHOW_LEGEND()
 @enduml

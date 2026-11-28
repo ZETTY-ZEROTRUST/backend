@@ -1,5 +1,15 @@
-검증 범위 · 2026-11-27
-C1–C4 PlantUML 7개, PNG/SVG 각 7개: 이전 작성 단계에서 문법·렌더링·한글 배치 확인
-이번 문서 정리에서는 아키텍처와 도면 내용을 변경하지 않고 설명·문서 링크를 갱신함
-애플리케이션 코드·Gradle·Docker·DB와 trust-chain-server 원본은 변경하지 않음
-실행 테스트·DB 전환·실제 Jev 호출 완료를 의미하지 않음
+검증 범위 · 2026-11-28
+C1 1개·C2 1개·C3 3개·C4 코드 구조 3개 = PlantUML 8개
+PNG 8개·SVG 8개: PlantUML -failfast2 렌더링 성공
+렌더러: PlantUML 1.2025.10 내장 C4 / Smetana / OpenJDK 26.0.1 / Apple SD Gothic Neo
+Graphviz 불필요·외부 렌더링 서비스 미사용
+한글·라벨·도형·경계·화살표를 PNG 8장으로 시각 확인
+HTML 로컬 링크·앵커, SVG XML·PNG 헤더/치수, SHA-256 및 ZIP/사본 일치 검사
+정본: backend/docs/architecture/session-backend-c4
+내보내기 사본: docs/architecture/session-backend-c4
+최신 인증·감사·작업 복구·모니터링 문서 대조; 클래스/메서드/운영 조회는 구현 전 제안
+도면 렌더 이후 승인된 레거시 정리: 구형 앱·실행 설정·테스트 제거, 문서·에이전트 지침·proposal 갱신
+도면 8개 원본·PNG·SVG 유지; Gradle 네 모듈·trust-chain-server 원본·사용자 데이터 보존
+도면 작성 단계에서는 서비스 실행·통합 테스트·실제 Jev 호출·배포·commit/push 미실행
+후속 기초 구현 검증: Java 21, User.java 제외한 bootJar 빌드·임시 로컬 서버 health 200/기본 경로 404/일반 파일 로그 생성 성공
+인증·DB·Redis·UBA 통합과 로그 회전/보존 기간의 실제 동작은 미검증

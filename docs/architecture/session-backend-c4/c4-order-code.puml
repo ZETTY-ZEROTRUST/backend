@@ -4,7 +4,7 @@ skinparam defaultFontName "Apple SD Gothic Neo"
 skinparam defaultFontSize 14
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
-skinparam dpi 150
+skinparam dpi 140
 left to right direction
 hide empty members
 skinparam classAttributeIconSize 0
@@ -14,7 +14,7 @@ skinparam classBorderColor #25638B
 skinparam ArrowColor #43576A
 skinparam nodesep 35
 skinparam ranksep 45
-title C4 · 주문 객체 인가 컴포넌트의 코드 구조\nPostgreSQL 설계안 · 제안 클래스
+title C4 · 주문 객체 인가 컴포넌트의 코드 구조\n2026-11-28 · 제안 클래스 / 아직 구현 전
 package "bootstrap-app · 주문 API" {
  class OrderController {
    +getDetail(orderId, principal)
@@ -23,7 +23,8 @@ package "bootstrap-app · 주문 API" {
    +getDetail(principal, orderId)
  }
  class RequestAuditContext {
-   requestId / occurredAt
+   requestId: 요청 진입 시 1회
+   occurredAt: 각 사건 관측 시각
    actorKey / auditSessionKey
  }
 }
@@ -47,7 +48,7 @@ package "application · 객체 인가" {
 package "infrastructure · PostgreSQL" {
  class PostgresOrderRepository
 }
-OrderController --> OrderFacade : 인증된 principal 전달
+OrderController --> OrderFacade : 기능 권한 검사·검증 principal 전달
 OrderFacade --> OrderService : principal.userId 사용
 OrderFacade --> RequestAuditContext : 요청 맥락 사용
 OrderServiceImpl ..|> OrderService
@@ -60,8 +61,10 @@ note bottom of OrderServiceImpl
  임의의 404를 모두 인가 거부로 기록하지 않음.
 end note
 note bottom of OrderFacade
+ 기능 권한·객체 소유권은 별도 검사.
  클라이언트가 보낸 userId는 신뢰하지 않음.
  거부 기록은 업무 롤백과 분리해 저장.
  감사 저장 실패 시 보호 응답 본문을 반환하지 않음.
+ 안정적인 오류·별도 응답 DTO / 내부 예외 비노출.
 end note
 @enduml

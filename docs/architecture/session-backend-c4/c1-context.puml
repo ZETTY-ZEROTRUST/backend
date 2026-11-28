@@ -4,20 +4,19 @@ skinparam defaultFontName "Apple SD Gothic Neo"
 skinparam defaultFontSize 14
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
-skinparam dpi 150
+skinparam dpi 140
 !include <C4/C4_Context>
 LAYOUT_TOP_DOWN()
-title C1 · ZETTY 시스템 맥락\nPostgreSQL 설계안 · 구현 전
-
-Person(customer, "고객", "로그인하고 자신의 주문·배송지·결제 이력 조회")
-Person(analyst, "분석 담당자", "근거와 정상 설명을 확인하고 조사 여부 결정")
-System(zetty, "ZETTY", "세션 인증·객체 인가·감사 기록과 AI 행동 분석")
-System_Ext(sim, "attack-simulation", "허가된 로컬 환경에서 공격·정상 대조군 재현")
-System_Ext(jev, "TypeSafe Jev", "가명 처리된 행동 맥락에 대한 AI 판정")
-Rel(customer, zetty, "로그인·업무 조회", "HTTPS")
-Rel(sim, zetty, "계정 탈취 의심 / 반복 주문 접근 시나리오", "HTTPS")
-Rel(zetty, jev, "관측값·과거 이력·근거 참조로 분석 요청", "HTTPS")
-Rel(analyst, zetty, "저장된 초동보고서와 증거 확인", "로컬 보고서 열람")
-
+title C1 · ZETTY 시스템 맥락\n2026-11-28 · 목표 설계 / 런타임 전환 전
+Person(customer, "고객", "로그인·자기 주문 및 관련 정보 조회")
+Person(operator, "운영·분석 담당자", "상태·지연 확인 / 근거 기반 조사")
+System(zetty, "ZETTY", "세션 인증·객체 인가·감사 저장\n지속적인 AI 행동 분석·초동보고서")
+System_Ext(sim, "attack-simulation", "허가된 로컬 환경의 두 시나리오와 정상 대조군")
+System_Ext(jev, "TypeSafe Jev", "AI 분석 제공자\n지원 API·출력은 연동 전 확인")
+Rel(customer, zetty, "로그인·업무 요청", "HTTPS")
+Rel(sim, zetty, "로그인 후 탈취 의심 / 반복 주문 접근", "HTTPS")
+Rel(zetty, jev, "최소화한 관측·과거 이력으로 분석 요청", "HTTPS")
+Rel(operator, zetty, "운영 상태·전달/분석 지연·보고서 확인", "내부 운영 조회 / 로컬 CLI 안")
+caption AI는 인가를 집행하지 않음 · 직접 모델 학습·자동 차단·Slack은 최소 범위 밖
 SHOW_LEGEND()
 @enduml

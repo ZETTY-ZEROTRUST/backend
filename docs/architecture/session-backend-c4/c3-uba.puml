@@ -4,34 +4,33 @@ skinparam defaultFontName "Apple SD Gothic Neo"
 skinparam defaultFontSize 14
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
-skinparam dpi 150
+skinparam dpi 140
 !include <C4/C4_Component>
 LAYOUT_TOP_DOWN()
-title C3 · uba-analyzer 내부 컴포넌트\nPostgreSQL 설계안 · 구현 전
-
-Container_Ext(backend, "backend 전달 작업", "Java", "감사 이벤트 전송·재시도")
-System_Ext(jev, "TypeSafe Jev", "AI 판정 API")
-Person(analyst, "분석 담당자", "조사 여부 확인")
-ContainerDb_Ext(store, "분석 저장소", "PostgreSQL / zetty_uba", "이벤트·분석 작업·이력·보고서")
+title C3 · uba-analyzer 수신·분석 컴포넌트\n지속 실행 / 수신 ACK와 분석 완료 분리
+Container_Ext(backend, "backend 전달 작업", "Java", "동일 event_id 재시도")
+System_Ext(jev, "TypeSafe Jev", "지원 계약 확인 후 연동")
+Person(analyst, "분석 담당자", "저장 보고서·근거 확인")
+ContainerDb_Ext(store, "분석 DB", "PostgreSQL / zetty_uba", "수신 사실·영속 작업·보고서")
 Container_Boundary(u, "uba-analyzer · 하나의 Python 앱") {
- Component(receiver, "감사 이벤트 수신", "HTTP endpoint", "서비스 인증·스키마 검증·event_id 중복 제거")
- Component(worker, "분석 작업 실행", "Background worker", "저장된 대기 작업 처리·재시도")
- Component(context, "행동 맥락 구성", "Python", "시간 구간·과거 이용 이력·순서·고유 대상 수")
- Component(client, "Jev 연동", "API client", "입력 최소화·타임아웃·응답 검증")
- Component(report, "보고서 구성", "Template / validation", "관측 사실·AI 판정·근거 참조·미확인 사항")
- Component(reader, "보고서 열람", "로컬 CLI · 제안", "저장된 결과 조회·내보내기")
+ Component(receiver, "감사 이벤트 수신", "HTTP receiver", "서비스 Bearer·schema 검증\n동일 ID/내용 중복·다른 내용 충돌")
+ Component(worker, "작업 실행·복구", "Background worker", "대기 선점·bounded 실행·재시도\nstuck 회수·늦은 결과 조건부 반영")
+ Component(context, "행동 맥락 구성", "Python analysis", "event-time 창·과거 이력·지연/누락\n실험 정답·미래 정보 제외")
+ Component(client, "Jev 어댑터", "API client", "최소 입력·timeout·응답 검증\n호출 실패와 근거 부족 구별")
+ Component(report, "보고서 구성·저장", "Template / validation", "관측 사실·지원 판정·근거 ID\n버전·미확인/미평가 사유")
+ Component(reader, "보고서 열람", "로컬 CLI 안", "권한 있는 조회·내보내기")
 }
-Rel(backend, receiver, "감사 이벤트 / 커밋 후 ACK", "내부 HTTP")
-Rel(receiver, store, "이벤트 + 분석 대기 작업을 원자적으로 저장")
-Rel(worker, store, "대기 작업 조회·상태 갱신")
-Rel(worker, context, "분석 대상·관측 종료 시각 지정")
-Rel(context, store, "현재 관측 + 비교 가능한 과거 이력 조회")
-Rel(context, client, "가명 맥락·관측 누락·근거 ID")
-Rel(client, jev, "관측 기반 분석 요청", "HTTPS")
-Rel(worker, report, "관측 맥락 + 판정 / 실패 시 미평가 사유")
-Rel(report, store, "검증된 보고서·버전·근거 저장")
+Rel(backend, receiver, "이벤트 / 커밋 후 ACK", "서비스 인증된 내부 HTTP¹")
+Rel(receiver, store, "이벤트+작업 원자적 저장\nreceived_at은 최초 수신 메타데이터")
+Rel(worker, store, "짧은 선점·복구·조건부 완료")
+Rel(worker, context, "작업·시도·관측 종료 시각")
+Rel(context, store, "판단 시점 이전 관측·비교 이력")
+Rel(context, client, "가명 맥락·근거 event_id")
+Rel(client, jev, "분석 요청·결과", "HTTPS / SQL 트랜잭션 밖")
+Rel(worker, report, "맥락·검증 결과 또는 미평가 사유")
+Rel(report, store, "보고서·버전·근거 영속 저장")
 Rel(analyst, reader, "결과 확인")
 Rel(reader, store, "보고서 조회")
-
+caption ¹ 격리 로컬 HTTP / 배포 TLS · 최초 received_at은 중복 수신으로 덮어쓰지 않음\nJev 중단 중에도 DB 저장 가능하면 수신 지속 / 일반 로그·운영 상태는 운영 관측도 참조
 SHOW_LEGEND()
 @enduml
